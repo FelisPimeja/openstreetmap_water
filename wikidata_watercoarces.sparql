@@ -1,0 +1,22 @@
+#Get information on Watercoarces in Russia:
+SELECT ?waterway ?waterwayLabelRu ?waterwayLabel ?springCoord ?mouthCoord ?mouthQid ?length ?gvr (GROUP_CONCAT(DISTINCT ?tributaryQid; SEPARATOR="; ") AS ?tributaries)
+WHERE {
+  ?waterway wdt:P31 wd:Q47521;  # waterway (river or stream)
+            wdt:P17 wd:Q159;     # located in Russia
+            rdfs:label ?waterwayLabelRu.
+  FILTER(LANG(?waterwayLabelRu) = "ru")
+  
+  OPTIONAL { ?waterway rdfs:label ?waterwayLabelRu.
+             FILTER(LANG(?waterwayLabelEn) = "en") }
+  
+  OPTIONAL { ?waterway wdt:P625 ?springCoord. }
+  OPTIONAL { ?waterway wdt:P974 ?tributary. }
+  BIND(STRAFTER(STR(?tributary), STR(wd:)) AS ?tributaryQid) .
+  OPTIONAL { ?waterway wdt:P403 ?mouthWatercourse. }
+  BIND(STRAFTER(STR(?mouthWatercourse), STR(wd:)) AS ?mouthQid) .
+  OPTIONAL { ?waterway wdt:P2043 ?length. }
+  OPTIONAL { ?waterway wdt:P884 ?gvr. }
+  
+  SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
+}
+GROUP BY ?waterway ?waterwayLabelRu ?waterwayLabel ?springCoord ?mouthCoord ?mouthQid ?length ?gvr
