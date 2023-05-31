@@ -130,3 +130,35 @@ delete from water.water_ways where way_id  = 677306284;
 
 select 'Water ways (river) segments count'      category, count(*) from water.water_ways where tags ->> 'waterway' = 'river' union all
 select 'Water ways after recursive merge count' category, count(*) from water.a5;
+
+
+
+
+
+
+-- Сборка и приведение данных из Викидаты:
+create table water.wikidata_proccessed as
+select 
+	replace(waterway, 'http://www.wikidata.org/entity/', '') id ,
+	nullif(labelru, '') name_ru,
+	nullif(labelen, '') name_en,
+	st_pointfromtext(nullif(sourcecoords, ''), 4326) source_pnt,
+	st_pointfromtext(nullif(mouthcoords,  ''), 4326) mouth_pnt,
+	st_makeline(
+		st_pointfromtext(nullif(sourcecoords, ''), 4326), 
+		st_pointfromtext(nullif(mouthcoords,  ''), 4326)
+	) geom,
+	nullif(mouthqid, '') mouthq_id,
+	length length_km,
+	nullif(gvr, '') gvr_id,
+	osm_id,
+	string_to_array(nullif(tributaries, ''), '; ') tributary_id_list
+from water.wikidata_waterways_russia;
+
+create index on water.wikidata_proccessed(id);
+create index on water.wikidata_proccessed(mouthq_id);
+create index on water.wikidata_proccessed(tributary_id_list);
+create index on water.wikidata_proccessed(gvr_id);
+create index on water.wikidata_proccessed using gist(source_pnt);
+create index on water.wikidata_proccessed using gist(mouth_pnt);
+create index on water.wikidata_proccessed using gist(geom);
