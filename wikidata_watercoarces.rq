@@ -1,5 +1,5 @@
 #Get information on Watercoarces in Russia:
-SELECT
+SELECT DISTINCT
   ?waterway ?labelRU ?labelEN ?sourceCoords ?mouthCoords ?mouthQid ?length ?gvr 
   #(GROUP_CONCAT(DISTINCT ?tributaryQid; SEPARATOR="; ") AS ?tributaries)  # Aggregate tributary identifiers into list with ; delimiter
 WHERE {
