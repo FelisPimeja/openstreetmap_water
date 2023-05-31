@@ -10,6 +10,9 @@ WHERE {
   OPTIONAL { ?waterway rdfs:label ?LabelEN FILTER (lang(?LabelEN) = "en") . } # Waterway name in English
   OPTIONAL { ?waterway rdfs:label ?LabelRU FILTER (lang(?LabelRU) = "ru") . } # Waterway name in Russian
 
+  OPTIONAL { ?waterway p:P625 [ ps:P625 ?sourceCoords ; pq:P518 wd:Q7376362 ] . } # Source coordinates
+  OPTIONAL { ?waterway p:P625 [ ps:P625 ?mouthCoords  ; pq:P518 wd:Q1233637 ] . } # Mouth coordinates
+            
   OPTIONAL { ?waterway wdt:P625 ?springCoord. }
   OPTIONAL { ?waterway wdt:P974 ?tributary. }
   OPTIONAL { ?waterway wdt:P403 ?mouthWatercourse. }
