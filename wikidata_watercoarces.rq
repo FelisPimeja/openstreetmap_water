@@ -1,7 +1,7 @@
 #Get information on Watercoarces in Russia:
 SELECT DISTINCT
-  ?waterway ?labelRU ?labelEN ?sourceCoords ?mouthCoords ?mouthQid ?length ?gvr 
-  #(GROUP_CONCAT(DISTINCT ?tributaryQid; SEPARATOR="; ") AS ?tributaries)  # Aggregate tributary identifiers into list with ; delimiter
+  ?waterway ?labelRU ?labelEN ?sourceCoords ?mouthCoords ?mouthQid ?length ?gvr ?osm_id #?tributary
+  (GROUP_CONCAT(DISTINCT ?tributaryQid; SEPARATOR="; ") AS ?tributaries)  # Aggregate tributary identifiers into list with ; delimiter
 WHERE {
   ?waterway wdt:P31/wdt:P279+ wd:Q47521;  
             wdt:P17 wd:Q159;     # located in Russia
@@ -13,6 +13,7 @@ WHERE {
   OPTIONAL { ?waterway wdt:P403 ?mouthWatercourse. }
   OPTIONAL { ?waterway wdt:P2043 ?length. }
   OPTIONAL { ?waterway wdt:P884 ?gvr. }
+  OPTIONAL { ?waterway wdt:P402 ?osm_id. } # OpenStreetMap relation ID
   OPTIONAL { ?waterway wdt:P974 ?tributary. }
   
   # Strip Wikidata identifiers:
@@ -22,6 +23,5 @@ WHERE {
   SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
 }
 
-# Group by for gathering tributaries list (turned off for performance reasons!)
-#GROUP BY ?waterway ?labelRU ?labelEN ?sourceCoords ?mouthCoords ?mouthQid ?length ?gvr 
-#LIMIT 100
+# Group by for gathering tributaries list
+GROUP BY ?waterway ?labelRU ?labelEN ?sourceCoords ?mouthCoords ?mouthQid ?length ?gvr ?osm_id
