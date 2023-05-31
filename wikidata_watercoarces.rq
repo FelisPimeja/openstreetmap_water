@@ -4,9 +4,8 @@ SELECT
   # Aggregate tributary identifiers into list with ; delimiter
   (GROUP_CONCAT(DISTINCT ?tributaryQid; SEPARATOR="; ") AS ?tributaries) 
 WHERE {
-  ?waterway wdt:P31 wd:Q47521;  # waterway (river or stream)
-            wdt:P17 wd:Q159;     # located in Russia
-            rdfs:label ?waterwayLabelRu.
+  ?waterway wdt:P31/wdt:P279+ wd:Q47521;  # Select watercoarces
+            wdt:P17 wd:Q159;              # located in Russia
   FILTER(LANG(?waterwayLabelRu) = "ru")
   
   OPTIONAL { ?waterway rdfs:label ?waterwayLabelRu.
