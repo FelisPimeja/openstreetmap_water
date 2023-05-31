@@ -6,11 +6,10 @@ SELECT
 WHERE {
   ?waterway wdt:P31/wdt:P279+ wd:Q47521;  # Select watercoarces
             wdt:P17 wd:Q159;              # located in Russia
-  FILTER(LANG(?waterwayLabelRu) = "ru")
-  
-  OPTIONAL { ?waterway rdfs:label ?waterwayLabelRu.
-             FILTER(LANG(?waterwayLabelEn) = "en") }
-  
+
+  OPTIONAL { ?waterway rdfs:label ?LabelEN FILTER (lang(?LabelEN) = "en") . } # Waterway name in English
+  OPTIONAL { ?waterway rdfs:label ?LabelRU FILTER (lang(?LabelRU) = "ru") . } # Waterway name in Russian
+
   OPTIONAL { ?waterway wdt:P625 ?springCoord. }
   OPTIONAL { ?waterway wdt:P974 ?tributary. }
   OPTIONAL { ?waterway wdt:P403 ?mouthWatercourse. }
