@@ -115,12 +115,11 @@ with recursive waterways as (
 		from waterways w 
 		left join prev_ways p
 			on w.way_id = p.prev_way_id
-		where w.way_id <> p.way_id
-			and p.way_id is not null
+		where p.way_id is not null
 	)
 )
-select * from waterways;
-
+--select * from waterways;
+--
 select distinct on (id) * 
 from waterways
 order by id, i desc
