@@ -137,7 +137,8 @@ select 'Water ways after recursive merge count' category, count(*) from water.a5
 
 
 -- Сборка и приведение данных из Викидаты:
-create table water.wikidata_proccessed as
+drop table if exists water.wikidata_tmp1;
+create table water.wikidata_tmp1 as
 select 
 	replace(waterway, 'http://www.wikidata.org/entity/', '') id ,
 	nullif(labelru, '') name_ru,
@@ -155,6 +156,56 @@ select
 	string_to_array(nullif(tributaries, ''), '; ') tributary_id_list
 from water.wikidata_waterways_russia;
 
+create index on water.wikidata_tmp1(id);
+
+
+
+-- Пересборка приблизительной геометрии реки с учётом устей притоков:
+drop table if exists water.wikidata_proccessed;
+create table water.wikidata_proccessed as 
+select 
+	w1.id, 
+	w1.name_ru, 
+	w1.name_en, 
+	w1.source_pnt,
+	w1.mouth_pnt,
+	w1.mouthq_id,
+	w1.length_km,
+	w1.gvr_id,
+	w1.osm_id,
+	w1.tributary_id_list,
+	array_agg(w2.name_ru) tributary_names_list,
+	st_makeline(
+		array_prepend(
+			w1.source_pnt, (
+				array_append(
+					array_append(
+						array_agg(
+							w2.mouth_pnt order by st_distance(
+								st_transform(w1.source_pnt, 3857), 
+								st_closestpoint(
+									st_transform(w1.geom,3857), 
+									st_transform(w2.mouth_pnt,3857)
+								)
+							)
+						),
+						w1.mouth_pnt
+					),
+					w1.mouth_pnt
+				)
+			)
+		)
+	) geom
+from water.wikidata_tmp1 w1
+left join water.wikidata_tmp1 w2 
+	on w2.id = ANY(w1.tributary_id_list)
+group by 
+	w1.id, w1.name_ru, w1.tributary_id_list, 
+	w1.source_pnt, w1.mouth_pnt, w1.geom,
+	w1.name_en, w1.mouthq_id, w1.length_km,
+	w1.gvr_id, w1.osm_id;
+
+
 create index on water.wikidata_proccessed(id);
 create index on water.wikidata_proccessed(mouthq_id);
 create index on water.wikidata_proccessed(tributary_id_list);
@@ -162,3 +213,9 @@ create index on water.wikidata_proccessed(gvr_id);
 create index on water.wikidata_proccessed using gist(source_pnt);
 create index on water.wikidata_proccessed using gist(mouth_pnt);
 create index on water.wikidata_proccessed using gist(geom);
+
+
+drop table if exists water.wikidata_tmp1;
+
+
+
