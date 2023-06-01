@@ -1,5 +1,5 @@
 
--- Брошенные концы водотоков:
+-- Waterway dead ends:
 drop table if exists water.dead_ends; 
 create table water.dead_ends as 
 select st_endpoint(w1.geom) pnt, w1.* 
@@ -32,7 +32,7 @@ where tags ->> 'waterway' in ('river', 'stream', 'canal');
 
 
 
--- Сборка геометрии водотоков с минимальными негативными эффектами
+-- Merging waterways geometry with minimum side effects (no attributes unfortunately!)
 drop table if exists water.a3;
 create table water.a3 as 
 select 
@@ -68,9 +68,9 @@ limit 1
 
 
 
--- Рекурсивная сборка водотоков
--- Уходит в бесконечный цикл и вываливается по памяти если сталкивается с закольцованным маршрутом!!!
--- 2m 18s на ЦФО
+-- Recursively building waterways
+-- Problem: infinite loop if waterway ways area forming circle root!!!
+-- 2m 18s for Central Federal District in Russia
 drop table if exists water.a5;
 create table water.a5 as
 --
@@ -124,7 +124,7 @@ select distinct on (id) *
 from waterways
 order by id, i desc
 
--- Удаление закольцовывающего дубликата:
+-- Removind circle forming duplicate!:
 delete from water.water_ways where way_id  = 677306284;
 
 
@@ -136,7 +136,7 @@ select 'Water ways after recursive merge count' category, count(*) from water.a5
 
 
 
--- Сборка и приведение данных из Викидаты:
+-- First pass proccessing Wikidata dataset:
 drop table if exists water.wikidata_tmp1;
 create table water.wikidata_tmp1 as
 select 
@@ -160,7 +160,7 @@ create index on water.wikidata_tmp1(id);
 
 
 
--- Пересборка приблизительной геометрии реки с учётом устей притоков:
+-- Build very simple waterway geometry from start, end points and tributary mouth points (if any):
 drop table if exists water.wikidata_proccessed;
 create table water.wikidata_proccessed as 
 select 
@@ -179,7 +179,7 @@ select
 		array_prepend(
 			w1.source_pnt, (
 				array_append(
-					array_append(
+					array_append( -- Append mouth point 2 times to form linestrings from 2 points minimum 
 						array_agg(
 							w2.mouth_pnt order by st_distance(
 								st_transform(w1.source_pnt, 3857), 
