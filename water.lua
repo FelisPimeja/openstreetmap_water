@@ -19,9 +19,9 @@ tables.water_polygons = osm2pgsql.define_area_table('water_polygons', {
     { column = 'geom', type = 'geometry', projection = srid, not_null = true },
 }, { schema = loc_schema })
 
-tables.water_routes = osm2pgsql.define_relation_table('water_routes', {
+tables.water_relations = osm2pgsql.define_relation_table('water_relations', {
     { column = 'tags', type = 'jsonb' },
-    { column = 'geom', type = 'multilinestring', projection = srid, not_null = true },
+    { column = 'members', type = 'jsonb' },
 }, { schema = loc_schema })
 
 -- These tag keys are generally regarded as useless for most rendering. Most
@@ -229,9 +229,9 @@ function osm2pgsql.process_relation(object)
     end
 
     if relation_type == 'waterway' and tag_waterway ~= 'fairway' then
-        tables.water_routes:insert({
+        tables.water_relations:insert({
             tags = object.tags,
-            geom = object:as_multilinestring():line_merge()
+            members = object.members
         })
     end
 
