@@ -155,7 +155,6 @@ select
 	osm_id,
 	string_to_array(nullif(tributaries, ''), '; ') tributary_id_list
 from water.wikidata_waterways_russia;
-
 create index on water.wikidata_tmp1(id);
 
 
@@ -205,7 +204,7 @@ group by
 	w1.name_en, w1.mouthq_id, w1.length_km,
 	w1.gvr_id, w1.osm_id;
 
-
+-- Create indexes 
 create index on water.wikidata_proccessed(id);
 create index on water.wikidata_proccessed(mouthq_id);
 create index on water.wikidata_proccessed(tributary_id_list);
@@ -214,8 +213,93 @@ create index on water.wikidata_proccessed using gist(source_pnt);
 create index on water.wikidata_proccessed using gist(mouth_pnt);
 create index on water.wikidata_proccessed using gist(geom);
 
-
+-- Drop temporary tables
 drop table if exists water.wikidata_tmp1;
+
+
+
+
+
+---------------------------------------------------
+
+select w.*, array_agg((m ->> 'ref')::int8) mems
+from water.water_relations w
+cross join jsonb_array_elements(members) m
+group by w.relation_id, w.tags, w.members 
+
+
+-- Waterway relations with suspicious member roles
+select distinct
+	relation_id, 
+	tags ->> 'name' 		name,
+	tags ->> 'name:ru' 		name_ru,
+	tags ->> 'name:en' 		name_en,
+	tags ->> 'wikipedia' 	wikipedia,
+	tags ->> 'wikidata' 	wikidata,
+	tags, 
+	members
+from water2.water_relations w
+cross join jsonb_array_elements(members) m
+where 	(m ->> 'type' = 'r' )
+	or  (m ->> 'type' = 'n' and m ->> 'role' not in ('spring', 'mouth'))
+	or  (m ->> 'type' = 'w' and m ->> 'role' not in ('main_stream', 'side_stream', 'anabranch'))
+	
+	or 	m ->> 'type' = 'r'
+
+	
+	
+	
+drop table if exists water.a1;
+create table water.a1 as	
+select
+	relation_id, 
+	tags ->> 'name' 		name,
+	tags ->> 'name:ru' 		name_ru,
+	tags ->> 'name:en' 		name_en,
+	tags ->> 'wikipedia' 	wikipedia,
+	tags ->> 'wikidata' 	wikidata,
+	'https://ru.wikipedia.org/wiki/' || (tags ->> 'wikipedia')::text wikipedia_link, 
+	'https://www.wikidata.org/wiki/' || (tags ->> 'wikidata' )::text wikidata_link, 
+	'https://www.openstreetmap.org/relation/' || relation_id osm_rel_link,
+	'http://localhost:8111/load_object?objects=r' || relation_id || '&relation_members=true' josm_link,
+	tags, 
+	members,
+	geom
+from water.waterways_from_rels w
+
+
+
+
+create index on water.water_relations(members);
+
+
+
+-- Gather geometry from waterway relations
+drop table if exists water.waterways_from_rels;
+create table water.waterways_from_rels as 
+select 
+	r.relation_id,
+	r.tags,
+	r.members,
+	st_linemerge(st_collect(w.geom), true) geom
+from water.water_relations r
+cross join jsonb_array_elements(members) m
+left join water.water_ways w 
+	on w.way_id = (m ->> 'ref')::int8
+where m ->> 'type' = 'w'
+group by r.relation_id, r.tags, r.members;
+
+create index on water.waterways_from_rels using gist(geom);
+
+
+
+
+select * from water.water_relations wr 
+
+
+
+alter table water2.wikidata_waterways_russia  set schema water
+
 
 
 
