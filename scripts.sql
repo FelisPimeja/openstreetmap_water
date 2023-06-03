@@ -301,5 +301,115 @@ select * from water.water_relations wr
 alter table water2.wikidata_waterways_russia  set schema water
 
 
+-----------------------------
+
+select json_agg(a)
+from (
+	select
+		relation_id, 
+		tags ->> 'name' 		name,
+		tags ->> 'name:ru' 		name_ru,
+		tags ->> 'name:en' 		name_en,
+		tags ->> 'wikipedia' 	wikipedia,
+		tags ->> 'wikidata' 	wikidata--,
+	--	'https://ru.wikipedia.org/wiki/' || (tags ->> 'wikipedia')::text wikipedia_link, 
+	--	'https://www.wikidata.org/wiki/' || (tags ->> 'wikidata' )::text wikidata_link, 
+	--	'https://www.openstreetmap.org/relation/' || relation_id osm_rel_link,
+	--	'http://localhost:8111/load_object?objects=r' || relation_id || '&relation_members=true' josm_link--,
+	--	tags, 
+	--	members,
+	--	geom
+	from water.waterways_from_rels w
+) a
 
 
+
+
+-- How many rivers (streams and canals) with distinct names 
+-- and wiki tags are there not in waterway relations (2933)
+with ways_in_rels as (
+	select (m ->> 'ref')::int8 way_id
+	from water.water_relations r
+	cross join jsonb_array_elements(members) m
+	where m ->> 'type' = 'w'
+		and m ->> 'role' in ('main_streal', 'side_stream', 'anabranch')
+)
+select count(distinct w.tags ->> 'name') cnt_name
+from water.water_ways w 
+left join ways_in_rels r using(way_id)
+where r.way_id is null
+	and w.tags ->> 'waterway' in ('river', 'stream', 'canal')
+	and (w.tags ? 'wikipedia' or w.tags ? 'wikidata')
+
+	
+	
+	
+-- Create separate table for waterways that are not in waterway relations
+drop table if exists water.waterways_not_in_rels;
+create table water.waterways_not_in_rels as
+with ways_in_rels as (
+	select (m ->> 'ref')::int8 way_id
+	from water.water_relations r
+	cross join jsonb_array_elements(members) m
+	where   m ->> 'type' = 'w'
+		and m ->> 'role' in ('main_stream', 'side_stream', 'anabranch')
+)
+select w.*
+from water.water_ways w 
+left join ways_in_rels r using(way_id)
+where r.way_id is null;
+
+create index on water.waterways_not_in_rels using gist(geom);
+	
+	
+	
+
+
+-- Check waterway relation for multiple springs and mouths
+-- (possibly pointing on errors)
+-- todo: 
+--	- Add check for multiple mouths charing the same way or relation
+drop table if exists water.waterways_from_rels2;
+create table water.waterways_from_rels2 as 
+with segments_raw as (
+	select 
+		relation_id,
+		(st_dump(geom)).geom geom 
+	from water.waterways_from_rels
+),
+segments as (
+	select 	row_number() over(partition by relation_id) segment_id, *
+	from segments_raw
+),
+springs as (
+	select 
+		s1.relation_id, 
+		st_collect(st_startpoint(s1.geom)) spring
+	from segments s1
+	left join segments s2
+		on s1.relation_id = s2.relation_id
+			and s1.segment_id <> s2.segment_id
+			and st_intersects(st_startpoint(s1.geom), s2.geom)
+	where s2.relation_id is null
+	group by s1.relation_id 
+),
+mouths as (
+	select  
+		s1.relation_id, 
+		st_collect(st_endpoint(s1.geom)) mouth
+	from segments s1
+	left join segments s2
+		on s1.relation_id = s2.relation_id
+			and s1.segment_id <> s2.segment_id
+			and st_intersects(st_endpoint(s1.geom), s2.geom)
+	where s2.relation_id is null
+	group by s1.relation_id 
+)
+select w.*, spring, mouth
+from water.waterways_from_rels w
+left join springs using(relation_id)
+left join mouths  using(relation_id);
+	
+	
+	
+	
