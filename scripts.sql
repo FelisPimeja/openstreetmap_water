@@ -368,7 +368,7 @@ create index on water.waterways_not_in_rels using gist(geom);
 -- Check waterway relation for multiple springs and mouths
 -- (possibly pointing on errors)
 -- todo: 
---	- Add check for multiple mouths charing the same way or relation
+--	- Add check for multiple mouths sharing the same way or relation
 drop table if exists water.waterways_from_rels2;
 create table water.waterways_from_rels2 as 
 with segments_raw as (
