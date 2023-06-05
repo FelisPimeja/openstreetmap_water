@@ -1,5 +1,15 @@
 @echo off
-FOR /F "eol=# tokens=*" %%i IN (%~dp0\.env) DO SET %%i
+for /F "eol=# tokens=*" %%i in (%~dp0\.env) do set %%i
 
 @echo on
-ogr2ogr -f MVT -dsco FORMAT=DIRECTORY -dsco MAXZOOM=5 -dsco COMPRESS=NO %VECTORTILESDIR% PG:"host=%PGHOST% port=%PGPORT% dbname=%PGDB% user=%PGUSER% password=%PGPASSWORD%" water.waterways_from_rels2
+ogr2ogr -f MVT ^
+    -dsco format=directory ^
+    -dsco name="OSM watercourse errors" ^
+    -dsco description="Highlighted errors for Openstreetmap watercources validator https://felispimeja.github.io/openstreetmap_water/ (currently Russia only)" ^
+    -dsco type=overlay ^
+    -dsco minzoom=2 ^
+    -dsco maxzoom=7 ^
+    -dsco compress=no ^
+    %vectortilesdir% ^
+    PG:"host=%pghost% port=%pgport% dbname=%pgdb% user=%pguser% password=%pgpassword% active_schema=water" ^
+    err_watercourse err_spring err_mouth
