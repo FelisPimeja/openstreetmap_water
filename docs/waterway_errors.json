@@ -23,7 +23,7 @@
   "sources": {
     "openmaptiles": {
       "type": "vector",
-      "url": "https://api.maptiler.com/tiles/v3/tiles.json?key={key}"
+      "url": "https://api.maptiler.com/tiles/v3/tiles.json?key=z9jR5pdnvvxTxnCPJt9c"
     },
     "ogr2ogr": {
       "type": "vector",
@@ -37,7 +37,7 @@
     }
   },
   "sprite": "https://openmaptiles.github.io/positron-gl-style/sprite",
-  "glyphs": "https://api.maptiler.com/fonts/{fontstack}/{range}.pbf?key={key}",
+  "glyphs": "https://api.maptiler.com/fonts/{fontstack}/{range}.pbf?key=z9jR5pdnvvxTxnCPJt9c",
   "layers": [
     {
       "id": "background",
