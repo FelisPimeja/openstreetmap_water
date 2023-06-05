@@ -426,3 +426,27 @@ create view water.err_mouth as
 select relation_id,	mouth 
 from water.waterways_from_rels2 
 where st_numgeometries(mouth) > 1;
+
+create view water.not_in_rels as
+select 
+	way_id, 
+	tags ->> 'waterway' "type",	
+	tags ->> 'name' "name",	
+	tags - 'waterway' - 'name' tags, 
+	geom 
+from water.waterways_not_in_rels;
+
+create or replace view water.water_rels as
+select 
+	a.relation_id, 
+	a.tags ->> 'waterway' "type",	
+	a.tags ->> 'name' "name",	
+	a.tags - 'waterway' - 'name' tags, 
+	a.geom 
+from water.waterways_from_rels a 
+--left join water.waterways_from_rels2 b using(relation_id)
+--where b.relation_id not in (select relation_id from water.waterways_from_rels2);
+
+
+
+
