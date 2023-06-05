@@ -411,5 +411,18 @@ left join springs using(relation_id)
 left join mouths  using(relation_id);
 	
 	
-	
-	
+create view water.err_watercourse as
+select relation_id,	tags, geom 
+from water.waterways_from_rels2 
+where st_numgeometries(spring) > 1 
+	or st_numgeometries(mouth) > 1;
+
+create view water.err_spring as
+select relation_id,	spring 
+from water.waterways_from_rels2 
+where st_numgeometries(spring) > 1;
+
+create view water.err_mouth as
+select relation_id,	mouth 
+from water.waterways_from_rels2 
+where st_numgeometries(mouth) > 1;
