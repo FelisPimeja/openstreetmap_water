@@ -1,5 +1,5 @@
 @echo off
-FOR /F "eol=# tokens=*" %%i IN (%~dp0\.env) DO SET %%i
+for /F "eol=# tokens=*" %%i in (%~dp0\.env) do set %%i
 
 @echo on
-osm2pgsql -c -d %PGDB% -U %PGUSER% -H %PGHOST% -O flex -S %DIR%water.lua --hstore --multi-geometry %OSMDATA%
+osm2pgsql -c -d %pgdb% -u %pguser% -h %pghost% -o flex -s %flexConf% --hstore --multi-geometry %osmData%
