@@ -10,6 +10,6 @@ ogr2ogr -f MVT ^
     -dsco minzoom=3 ^
     -dsco maxzoom=7 ^
     -dsco compress=no ^
-    %vectortilesdir% ^
+    %vectorTiles% ^
     PG:"host=%pghost% port=%pgport% dbname=%pgdb% user=%pguser% password=%pgpassword% active_schema=water" ^
     water_rels err_watercourse err_spring err_mouth
