@@ -1,0 +1,23 @@
+# .gitattributes for the project
+
+# Auto detect text files and perform LF normalization
+*          text=auto
+
+*.gitattributes     text
+.gitignore          text
+
+# Source files
+# ============
+*.lua               text
+
+*.html              text diff=html
+*.css               text diff=css
+*.md                text diff=markdown
+
+*.sql linguist-detectable=true
+*.sql linguist-language=sql
+
+
+# Enable syntax highlighting for files with `.gitattributes` extensions.
+#
+*.gitattributes linguist-language=gitattributes
