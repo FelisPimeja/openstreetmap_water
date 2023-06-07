@@ -1,9 +1,12 @@
+SET client_min_messages TO WARNING; 
+
+
 ------------------------------------------
 --Proccess WikiData extract
 ------------------------------------------
 
 -- First pass proccessing Wikidata dataset:
-drop table if exists water.wikidata_tmp1;
+drop table if exists water.wikidata_tmp1 cascade;
 create table water.wikidata_tmp1 as
 select 
 	replace(waterway, 'http://www.wikidata.org/entity/', '') id ,
@@ -26,7 +29,7 @@ create index on water.wikidata_tmp1(id);
 
 
 -- Build very simple waterway geometry from start, end points and tributary mouth points (if any):
-drop table if exists water.wikidata_proccessed;
+drop table if exists water.wikidata_proccessed cascade;
 create table water.wikidata_proccessed as 
 select 
 	w1.id, 
@@ -80,7 +83,7 @@ create index on water.wikidata_proccessed using gist(mouth_pnt);
 create index on water.wikidata_proccessed using gist(geom);
 
 -- Drop temporary tables
-drop table if exists water.wikidata_tmp1;
+drop table if exists water.wikidata_tmp1 cascade;
 
 
 
@@ -95,7 +98,7 @@ create index on water.water_relations(members);
 
 
 -- Gather geometry from waterway relations
-drop table if exists water.waterways_from_rels;
+drop table if exists water.waterways_from_rels cascade;
 create table water.waterways_from_rels as 
 select 
 	r.relation_id,
@@ -113,7 +116,7 @@ create index on water.waterways_from_rels using gist(geom);
 
 
 -- Create separate table for waterways that are not in waterway relations
-drop table if exists water.waterways_not_in_rels;
+drop table if exists water.waterways_not_in_rels cascade;
 create table water.waterways_not_in_rels as
 with ways_in_rels as (
 	select (m ->> 'ref')::int8 way_id
@@ -135,7 +138,7 @@ create index on water.waterways_not_in_rels using gist(geom);
 -- (possibly pointing on errors)
 -- todo: 
 --	- Add check for multiple mouths sharing the same way or relation
-drop table if exists water.waterways_from_rels2;
+drop table if exists water.waterways_from_rels2 cascade;
 create table water.waterways_from_rels2 as 
 with segments_raw as (
 	select 
