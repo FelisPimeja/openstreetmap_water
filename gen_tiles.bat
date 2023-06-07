@@ -2,6 +2,7 @@
 for /F "eol=# tokens=*" %%i in (%~dp0\.env) do set %%i
 
 @echo on
+rmdir %vectorTiles% /s /q
 ogr2ogr -f MVT ^
     -dsco format=directory ^
     -dsco name="OSM watercourse errors" ^
