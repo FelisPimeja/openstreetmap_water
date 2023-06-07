@@ -2,7 +2,7 @@ SET client_min_messages TO WARNING;
 
 
 ------------------------------------------
---Proccess WikiData extract
+-- Proccess WikiData extract
 ------------------------------------------
 
 -- First pass proccessing Wikidata dataset:
@@ -90,7 +90,7 @@ drop table if exists water.wikidata_tmp1 cascade;
 
 
 ------------------------------------------
---Proccess OpenStreetMap extract
+-- Proccess OpenStreetMap extract
 ------------------------------------------
 
 -- Create indexes
@@ -179,6 +179,14 @@ from water.waterways_from_rels w
 left join springs using(relation_id)
 left join mouths  using(relation_id);
 	
+
+
+
+
+
+------------------------------------------
+-- Vector Tiles creation
+------------------------------------------
 
 
 -- Create views for easier building Vector tiles using ogr2ogr

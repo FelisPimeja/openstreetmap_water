@@ -450,3 +450,35 @@ from water.waterways_from_rels a
 
 
 
+--------------------------------------------------------
+
+-- Find rivers and canals that flow into smaller watercourses (streams, ditches)
+drop table if exists water.ranks;
+create table water.ranks as 
+select 
+	w1.way_id,
+	w1.tags ->> 'waterway' "type",
+	w1.geom --, w2.way_id, w2.tags ->> 'waterway' "type2"
+from water.water_ways w1
+left join water.water_ways w2
+	on st_intersects(st_endpoint(w1.geom), w2.geom)
+		and w2.tags ->> 'waterway' in ('stream', 'ditch', 'drain')
+left join water.water_ways w3
+	on w3.way_id <> w1.way_id 
+		and w3.tags ->> 'waterway' in ('river', 'canal')
+		and st_intersects(st_endpoint(w1.geom), w3.geom)
+where   w1.tags ->> 'waterway' in ('river', 'canal')
+	and w2.way_id is not null
+	and w3.way_id is null;
+
+create index on water.ranks using gist(geom);
+
+	
+	
+select distinct tags ->> 'waterway'
+from water.water_ways 
+where tags ? 'waterway'
+
+
+-------------------------------------------------------------
+
