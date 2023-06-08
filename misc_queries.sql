@@ -453,8 +453,8 @@ from water.waterways_from_rels a
 --------------------------------------------------------
 
 -- Find rivers and canals that flow into smaller watercourses (streams, ditches)
-drop table if exists water.ranks;
-create table water.ranks as 
+drop table if exists water.err_ranks;
+create table water.err_ranks as 
 select 
 	w1.way_id,
 	w1.tags ->> 'waterway' "type",
@@ -473,7 +473,77 @@ where   w1.tags ->> 'waterway' in ('river', 'canal')
 
 create index on water.ranks using gist(geom);
 
+
+
+
+-- Find watercourses segments with incorrect flow direction
+-- ~7 min - Maybe try to separate in steps with temp tables?
+drop table if exists water.err_directions;
+create table water.err_directions as 
+select 
+	w1.way_id,
+	w1.geom
+from water.water_ways w1
+left join water.water_ways w2
+	on w1.way_id <> w2.way_id
+--		and w2.tags ->> 'waterway' in ('river', 'canal')
+		and st_intersects(st_endpoint(w1.geom), w2.geom)
+		and (st_endpoint(w1.geom) = st_startpoint(w2.geom)	
+			or (    not st_equals(st_endpoint(w1.geom),   st_endpoint(w2.geom))
+				and not st_equals(st_endpoint(w1.geom), st_startpoint(w2.geom))
+			)
+		)
+left join water.water_ways w3
+	on w1.way_id <> w3.way_id
+--		and w3.tags ->> 'waterway' in ('river', 'canal')
+		and st_intersects(st_endpoint(w1.geom), w3.geom)
+		and st_endpoint(w1.geom) = st_endpoint(w3.geom)	
+left join water.coast_lines c
+	on st_intersects(st_endpoint(w1.geom), c.geom)
+where true --w1.tags ->> 'waterway' in ('river', 'canal')
+	and w2.way_id is null
+	and w3.way_id is not null
+	and c.way_id is null
+union all 
+select 
+	w1.way_id,
+	w1.geom
+from water.water_ways w1
+left join water.water_ways w2
+	on w1.way_id <> w2.way_id
+--		and w2.tags ->> 'waterway' in ('river', 'canal')
+		and st_intersects(st_startpoint(w1.geom), w2.geom)
+		and (st_startpoint(w1.geom) = st_endpoint(w2.geom)	
+			or (    not st_equals(st_startpoint(w1.geom),   st_endpoint(w2.geom))
+				and not st_equals(st_startpoint(w1.geom), st_startpoint(w2.geom))
+			)
+		)
+left join water.water_ways w3
+	on w1.way_id <> w3.way_id
+--		and w3.tags ->> 'waterway' in ('river', 'canal')
+		and st_intersects(st_startpoint(w1.geom), w3.geom)
+		and st_startpoint(w1.geom) = st_startpoint(w3.geom)	
+left join water.coast_lines c
+	on st_intersects(st_startpoint(w1.geom), c.geom)
+where true --w1.tags ->> 'waterway' in ('river', 'canal')
+	and w2.way_id is null
+	and w3.way_id is not null
+	and c.way_id is null;
+
+create index on water.err_directions using gist(geom);
+
 	
+
+	
+create index on water.water_ways using gist((st_endpoint(geom)));
+create index on water.water_ways using gist((st_startpoint(geom)));
+create index on water.water_ways (way_id);
+create index on water.water_ways (way_id, st_endpoint(geom), st_startpoint(geom));
+create index on water.water_ways using gist (st_endpoint(geom), st_startpoint(geom));
+
+	
+
+
 	
 select distinct tags ->> 'waterway'
 from water.water_ways 
