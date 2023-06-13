@@ -547,4 +547,38 @@ where tags ? 'waterway'
 
 
 -------------------------------------------------------------
+create index on water.waterways_from_rels2 using gist(geom);
+create index on water.waterways_from_rels2 using gist(mouth);
+
+
+-- Watercourse hierarchy
+select w1.*, w2.relation_id parent_id
+from water.waterways_from_rels2 w1
+left join water.waterways_from_rels2 w2 
+	on st_intersects(w1.mouth, w2.geom)
+
+
+
+create index on water.water_rels
+
+select  "type", count(*) cnt from water.water_areas group by "type" order by cnt desc;
+
+'water',
+'lake',
+'wetland',
+'pond',
+'marsh',
+'bog',
+'swamp',
+'river',
+'oxbow',
+'reedbed',
+'reservoir',
+'wet_meadow',
+'wastewater',
+'fen',
+'basin',
+'tidalflat',
+'saltmarsh',
+'canal'
 

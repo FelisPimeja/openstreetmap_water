@@ -93,6 +93,23 @@ drop table if exists water.wikidata_tmp1 cascade;
 -- Proccess OpenStreetMap extract
 ------------------------------------------
 
+-- Water areas
+drop table if exists water.water_areas;
+create table water.water_areas as 
+select 
+	area_id,
+	coalesce(tags ->> 'water', tags ->> 'wetland', tags ->> 'natural') 	"type",
+	tags ->> 'name' 													"name",
+	tags,
+	st_area(geom::geography)::int8 / 1000000 							area_sq_km,
+	st_multi(geom)::geometry 											geom
+from water.water_polygons;
+
+create index on water.water_areas("type", area_sq_km);
+create index on water.water_areas using gist(geom);
+
+
+
 -- Create indexes
 create index on water.water_relations(members);
 
@@ -102,9 +119,15 @@ drop table if exists water.waterways_from_rels cascade;
 create table water.waterways_from_rels as 
 select 
 	r.relation_id,
+	r.tags ->> 'waterway' 						"type", 
+	r.tags ->> 'name' 							"name", 
+	r.tags ->> 'wikipedia' 						wikipedia, 
+	r.tags ->> 'wikidata' 						wikidata, 
+	r.tags ->> 'gvr:code'						gvr_code, 	
 	r.tags,
 	r.members,
-	st_linemerge(st_collect(w.geom), true) geom
+	sum(st_length(geom::geography))::int / 1000 length_km, 
+	st_linemerge(st_collect(w.geom), true) 		geom
 from water.water_relations r
 cross join jsonb_array_elements(members) m
 left join water.water_ways w 
@@ -112,6 +135,7 @@ left join water.water_ways w
 where m ->> 'type' = 'w'
 group by r.relation_id, r.tags, r.members;
 
+create index on water.waterways_from_rels ("type", length_km);
 create index on water.waterways_from_rels using gist(geom);
 
 
@@ -125,11 +149,20 @@ with ways_in_rels as (
 	where   m ->> 'type' = 'w'
 		and m ->> 'role' in ('main_stream', 'side_stream', 'anabranch')
 )
-select w.*
+select 
+	w.way_id, 
+	w.tags ->> 'waterway' 						"type", 
+	w.tags ->> 'name' 							"name", 
+	w.tags ->> 'wikipedia' 						wikipedia, 
+	w.tags ->> 'wikidata' 						wikidata, 
+	w.tags ->> 'gvr:code'						gvr_code, 
+	st_length(w.geom::geography)::int / 1000 	length_km,
+	w.geom
 from water.water_ways w 
 left join ways_in_rels r using(way_id)
 where r.way_id is null;
 
+create index on water.waterways_not_in_rels ("type", length_km);
 create index on water.waterways_not_in_rels using gist(geom);
 
 
@@ -187,42 +220,1004 @@ left join mouths  using(relation_id);
 ------------------------------------------
 -- Vector Tiles creation
 ------------------------------------------
-
-
 -- Create views for easier building Vector tiles using ogr2ogr
-create view water.err_watercourse as
-select relation_id,	tags, geom 
-from water.waterways_from_rels2 
-where st_numgeometries(spring) > 1 
-	or st_numgeometries(mouth) > 1;
+--
+---- Watercourses from waterway relations
+--drop view if exists water.water_rels;
+--create view water.water_rels as
+--select 
+--	relation_id 							rel_id,
+--	tags ->> 'waterway' 					"type", 
+--	tags ->> 'name' 						"name", 
+--	tags ->> 'wikipedia' 					wikipedia, 
+--	tags ->> 'wikidata' 					wikidata, 
+--	tags ->> 'gvr:code'						gvr_code, 
+--	st_length(geom::geography)::int / 1000 	length_km, 
+--	geom 
+--from water.waterways_from_rels;
+--
+--drop view if exists water.err_watercourse;
+--create view water.err_watercourse as
+--select relation_id,	tags, geom 
+--from water.waterways_from_rels2 
+--where st_numgeometries(spring) > 1 
+--	or st_numgeometries(mouth) > 1;
+--
+--drop view if exists water.err_spring;
+--create view water.err_spring as
+--select relation_id,	spring 
+--from water.waterways_from_rels2 
+--where st_numgeometries(spring) > 1;
+--
+--drop view if exists water.err_mouth;
+--create view water.err_mouth as
+--select relation_id,	mouth 
+--from water.waterways_from_rels2 
+--where st_numgeometries(mouth) > 1;
+--
+--drop view if exists water.not_in_rels;
+--create view water.not_in_rels as
+--select 
+--	way_id, 
+--	tags ->> 'waterway' 		"type",	
+--	tags ->> 'name' 			"name",	
+--	tags - 'waterway' - 'name' 	tags, 
+--	geom 
+--from water.waterways_not_in_rels;
+--
+--
+-----------------------------------------
+--
+---- Linear features from relations
+--drop view if exists water.rel_a;
+--create view water.rel_a as 
+--select "type", "name", wikipedia, wikidata, gvr_code, geom, 'lin_a' "class"
+--from water.waterways_from_rels
+--where "type" in ('river', 'canal')
+--	and length_km > 2000;
+--
+--drop view if exists water.rel_b;
+--create view water.rel_b as 
+--select "type", "name", wikipedia, wikidata, gvr_code, geom, 'lin_b' "class"
+--from water.waterways_from_rels
+--where "type" in ('river', 'canal')
+--	and length_km between 1000 and 2000;
+--
+--drop view if exists water.rel_c;
+--create view water.rel_c as 
+--select "type", "name", wikipedia, wikidata, gvr_code, geom, 'lin_c' "class"
+--from water.waterways_from_rels
+--where "type" in ('river', 'canal')
+--	and length_km between 500 and 1000;
+--
+--drop view if exists water.rel_d;
+--create view water.rel_d as 
+--select "type", "name", wikipedia, wikidata, gvr_code, geom, 'lin_d' "class"
+--from water.waterways_from_rels
+--where "type" in ('river', 'canal')
+--	and length_km between 100 and 500;
+--
+--drop view if exists water.rel_e;
+--create view water.rel_e as 
+--select "type", "name", wikipedia, wikidata, gvr_code, geom, 'lin_e' "class"
+--from water.waterways_from_rels
+--where "type" in ('river', 'canal')
+--	and length_km between 50 and 100;
+--
+--drop view if exists water.rel_f;
+--create view water.rel_f as 
+--select "type", "name", wikipedia, wikidata, gvr_code, geom, 'lin_f' "class"
+--from water.waterways_from_rels
+--where  ("type" in ('river', 'canal')
+--			and length_km between 20 and 50
+--	) 
+--	or ("type" not in ('river', 'canal')
+--		and length_km > 20
+--	);
+--
+--drop view if exists water.rel_g;
+--create view water.rel_g as 
+--select "type", "name", wikipedia, wikidata, gvr_code, geom, 'lin_g' "class"
+--from water.waterways_from_rels
+--where length_km between 10 and 20;
+--
+--drop view if exists water.rel_h;
+--create view water.rel_h as 
+--select "type", "name", wikipedia, wikidata, gvr_code, geom, 'lin_h' "class"
+--from water.waterways_from_rels
+--where length_km between 5 and 10;
+--
+--drop view if exists water.rel_i;
+--create view water.rel_i as 
+--select "type", "name", wikipedia, wikidata, gvr_code, geom, 'lin_i' "class"
+--from water.waterways_from_rels
+--where length_km between 2 and 5;
+--
+--drop view if exists water.rel_j;
+--create view water.rel_j as 
+--select "type", "name", wikipedia, wikidata, gvr_code, geom, 'lin_j' "class"
+--from water.waterways_from_rels
+--where length_km < 2;
+--
+--
+--
+---- Linear features from ways
+--drop view if exists water.lin_a;
+--create view water.lin_a as 
+--select *, 'lin_a' "class"
+--from water.waterways_not_in_rels
+--where "type" in ('river', 'canal')
+--	and length_km > 2000;
+--
+--drop view if exists water.lin_b;
+--create view water.lin_b as 
+--select *, 'lin_b' "class"
+--from water.waterways_not_in_rels
+--where "type" in ('river', 'canal')
+--	and length_km between 1000 and 2000;
+--
+--
+--drop view if exists water.lin_c;
+--create view water.lin_c as 
+--select *, 'lin_c' "class"
+--from water.waterways_not_in_rels
+--where "type" in ('river', 'canal')
+--	and length_km between 500 and 1000;
+--
+--drop view if exists water.lin_d;
+--create view water.lin_d as 
+--select *, 'lin_d' "class"
+--from water.waterways_not_in_rels
+--where "type" in ('river', 'canal')
+--	and length_km between 100 and 500;
+--
+--drop view if exists water.lin_e;
+--create view water.lin_e as 
+--select *, 'lin_e' "class"
+--from water.waterways_not_in_rels
+--where "type" in ('river', 'canal')
+--	and length_km between 50 and 100;
+--
+--drop view if exists water.lin_f;
+--create view water.lin_f as 
+--select *, 'lin_f' "class"
+--from water.waterways_not_in_rels
+--where  ("type" in ('river', 'canal')
+--			and length_km between 20 and 50
+--	) 
+--	or ("type" not in ('river', 'canal')
+--		and length_km > 20
+--	);
+--
+--drop view if exists water.lin_g;
+--create view water.lin_g as 
+--select *, 'lin_g' "class"
+--from water.waterways_not_in_rels
+--where length_km between 10 and 20;
+--
+--drop view if exists water.lin_h;
+--create view water.lin_h as 
+--select *, 'lin_h' "class"
+--from water.waterways_not_in_rels
+--where length_km between 5 and 10;
+--
+--drop view if exists water.lin_i;
+--create view water.lin_i as 
+--select *, 'lin_i' "class"
+--from water.waterways_not_in_rels
+--where length_km between 2 and 5;
+--
+--drop view if exists water.lin_j;
+--create view water.lin_j as 
+--select *, 'lin_j' "class"
+--from water.waterways_not_in_rels
+--where length_km < 2;
+--
+--
+---- Area features from polygons
+--drop view if exists water.pol_a;
+--create view water.pol_a as 
+--select *, 'pol_a' "class"
+--from water.water_areas
+--where area_sq_km > 1000;
+--
+--drop view if exists water.pol_b;
+--create view water.pol_b as 
+--select *, 'pol_b' "class"
+--from water.water_areas
+--where area_sq_km > 500;
+--
+--drop view if exists water.pol_c;
+--create view water.pol_c as 
+--select *, 'pol_c' "class"
+--from water.water_areas
+--where area_sq_km > 100;
+--
+--drop view if exists water.pol_d;
+--create view water.pol_d as 
+--select *, 'pol_d' "class"
+--from water.water_areas
+--where area_sq_km > 50;
+--
+--drop view if exists water.pol_e;
+--create view water.pol_e as 
+--select *, 'pol_e' "class"
+--from water.water_areas
+--where area_sq_km > 20;
+--
+--drop view if exists water.pol_f;
+--create view water.pol_f as 
+--select *, 'pol_f' "class"
+--from water.water_areas
+--where area_sq_km > 10;
+--
+--drop view if exists water.pol_g;
+--create view water.pol_g as 
+--select *, 'pol_g' "class"
+--from water.water_areas
+--where area_sq_km > 5;
+--
+--drop view if exists water.pol_h;
+--create view water.pol_h as 
+--select *, 'pol_h' "class"
+--from water.water_areas
+--where area_sq_km > 2;
+--
+--drop view if exists water.pol_i;
+--create view water.pol_i as 
+--select *, 'pol_i' "class"
+--from water.water_areas;
 
-create view water.err_spring as
-select relation_id,	spring 
-from water.waterways_from_rels2 
-where st_numgeometries(spring) > 1;
 
-create view water.err_mouth as
-select relation_id,	mouth 
-from water.waterways_from_rels2 
-where st_numgeometries(mouth) > 1;
 
-create view water.not_in_rels as
+
+drop view if exists water.lin_0;
+create view water.lin_0 as 
 select 
-	way_id, 
-	tags ->> 'waterway' "type",	
-	tags ->> 'name' "name",	
-	tags - 'waterway' - 'name' tags, 
+	'r' || relation_id::text id,
+	"type", 
+	"name", 
+	wikipedia, 
+	wikidata, 
+	gvr_code,
+	case
+		when length_km > 2000 					then 'a'
+		when length_km between 1000 and 2000 	then 'b'
+		when length_km between  500 and 1000 	then 'c'
+		when length_km between  100 and  500 	then 'd'
+		when length_km between   50 and  100 	then 'e'
+		when length_km between   20 and   50 	then 'f'
+		when length_km between   10 and   20 	then 'g'
+		when length_km between    5 and   10 	then 'h'
+		when length_km between    2 and    5 	then 'i'
+		when length_km < 2 						then 'j'
+	end "class",
+	st_simplify(geom, 0.5) geom 
+from water.waterways_from_rels
+where "type" in ('river', 'canal') and length_km > 2000
+union all 
+select 
+	'w' || way_id::text id,
+	"type", 
+	"name", 
+	wikipedia, 
+	wikidata, 
+	gvr_code,
+	case
+		when length_km > 2000 					then 'a'
+		when length_km between 1000 and 2000 	then 'b'
+		when length_km between  500 and 1000 	then 'c'
+		when length_km between  100 and  500 	then 'd'
+		when length_km between   50 and  100 	then 'e'
+		when length_km between   20 and   50 	then 'f'
+		when length_km between   10 and   20 	then 'g'
+		when length_km between    5 and   10 	then 'h'
+		when length_km between    2 and    5 	then 'i'
+		when length_km < 2 						then 'j'
+	end "class",
+	st_simplify(geom, 0.5) geom 
+from water.waterways_not_in_rels
+where "type" in ('river', 'canal') and length_km > 2000;
+
+
+drop view if exists water.lin_1;
+create view water.lin_1 as 
+select 
+	'r' || relation_id::text id,
+	"type", 
+	"name", 
+	wikipedia, 
+	wikidata, 
+	gvr_code,
+	case
+		when length_km > 2000 					then 'a'
+		when length_km between 1000 and 2000 	then 'b'
+		when length_km between  500 and 1000 	then 'c'
+		when length_km between  100 and  500 	then 'd'
+		when length_km between   50 and  100 	then 'e'
+		when length_km between   20 and   50 	then 'f'
+		when length_km between   10 and   20 	then 'g'
+		when length_km between    5 and   10 	then 'h'
+		when length_km between    2 and    5 	then 'i'
+		when length_km < 2 						then 'j'
+	end "class",
+	st_simplify(geom, 0.2) geom 
+from water.waterways_from_rels
+where "type" in ('river', 'canal') and length_km > 1000
+union all 
+select 
+	'w' || way_id::text id,
+	"type", 
+	"name", 
+	wikipedia, 
+	wikidata, 
+	gvr_code,
+	case
+		when length_km > 2000 					then 'a'
+		when length_km between 1000 and 2000 	then 'b'
+		when length_km between  500 and 1000 	then 'c'
+		when length_km between  100 and  500 	then 'd'
+		when length_km between   50 and  100 	then 'e'
+		when length_km between   20 and   50 	then 'f'
+		when length_km between   10 and   20 	then 'g'
+		when length_km between    5 and   10 	then 'h'
+		when length_km between    2 and    5 	then 'i'
+		when length_km < 2 						then 'j'
+	end "class",
+	st_simplify(geom, 0.2) geom 
+from water.waterways_not_in_rels
+where "type" in ('river', 'canal') and length_km > 1000;
+
+
+drop view if exists water.lin_2;
+create view water.lin_2 as 
+select 
+	'r' || relation_id::text id,
+	"type", 
+	"name", 
+	wikipedia, 
+	wikidata, 
+	gvr_code,
+	case
+		when length_km > 2000 					then 'a'
+		when length_km between 1000 and 2000 	then 'b'
+		when length_km between  500 and 1000 	then 'c'
+		when length_km between  100 and  500 	then 'd'
+		when length_km between   50 and  100 	then 'e'
+		when length_km between   20 and   50 	then 'f'
+		when length_km between   10 and   20 	then 'g'
+		when length_km between    5 and   10 	then 'h'
+		when length_km between    2 and    5 	then 'i'
+		when length_km < 2 						then 'j'
+	end "class",
+	st_simplify(geom, 0.1) geom 
+from water.waterways_from_rels
+where "type" in ('river', 'canal') and length_km > 500
+union all 
+select 
+	'w' || way_id::text id,
+	"type", 
+	"name", 
+	wikipedia, 
+	wikidata, 
+	gvr_code,
+	case
+		when length_km > 2000 					then 'a'
+		when length_km between 1000 and 2000 	then 'b'
+		when length_km between  500 and 1000 	then 'c'
+		when length_km between  100 and  500 	then 'd'
+		when length_km between   50 and  100 	then 'e'
+		when length_km between   20 and   50 	then 'f'
+		when length_km between   10 and   20 	then 'g'
+		when length_km between    5 and   10 	then 'h'
+		when length_km between    2 and    5 	then 'i'
+		when length_km < 2 						then 'j'
+	end "class",
+	st_simplify(geom, 0.1) geom 
+from water.waterways_not_in_rels
+where "type" in ('river', 'canal') and length_km > 500;
+
+
+drop view if exists water.lin_3;
+create view water.lin_3 as 
+select 
+	'r' || relation_id::text id,
+	"type", 
+	"name", 
+	wikipedia, 
+	wikidata, 
+	gvr_code,
+	case
+		when length_km > 2000 					then 'a'
+		when length_km between 1000 and 2000 	then 'b'
+		when length_km between  500 and 1000 	then 'c'
+		when length_km between  100 and  500 	then 'd'
+		when length_km between   50 and  100 	then 'e'
+		when length_km between   20 and   50 	then 'f'
+		when length_km between   10 and   20 	then 'g'
+		when length_km between    5 and   10 	then 'h'
+		when length_km between    2 and    5 	then 'i'
+		when length_km < 2 						then 'j'
+	end "class",
+	st_simplify(geom, 0.075) geom 
+from water.waterways_from_rels
+where "type" in ('river', 'canal') and length_km > 100
+union all 
+select 
+	'w' || way_id::text id,
+	"type", 
+	"name", 
+	wikipedia, 
+	wikidata, 
+	gvr_code,
+	case
+		when length_km > 2000 					then 'a'
+		when length_km between 1000 and 2000 	then 'b'
+		when length_km between  500 and 1000 	then 'c'
+		when length_km between  100 and  500 	then 'd'
+		when length_km between   50 and  100 	then 'e'
+		when length_km between   20 and   50 	then 'f'
+		when length_km between   10 and   20 	then 'g'
+		when length_km between    5 and   10 	then 'h'
+		when length_km between    2 and    5 	then 'i'
+		when length_km < 2 						then 'j'
+	end "class",
+	st_simplify(geom, 0.075) geom 
+from water.waterways_not_in_rels
+where "type" in ('river', 'canal') and length_km > 100;
+
+
+drop view if exists water.lin_4;
+create view water.lin_4 as 
+select 
+	'r' || relation_id::text id,
+	"type", 
+	"name", 
+	wikipedia, 
+	wikidata, 
+	gvr_code,
+	case
+		when length_km > 2000 					then 'a'
+		when length_km between 1000 and 2000 	then 'b'
+		when length_km between  500 and 1000 	then 'c'
+		when length_km between  100 and  500 	then 'd'
+		when length_km between   50 and  100 	then 'e'
+		when length_km between   20 and   50 	then 'f'
+		when length_km between   10 and   20 	then 'g'
+		when length_km between    5 and   10 	then 'h'
+		when length_km between    2 and    5 	then 'i'
+		when length_km < 2 						then 'j'
+	end "class",
+	st_simplify(geom, 0.05) geom 
+from water.waterways_from_rels
+where "type" in ('river', 'canal') and length_km > 50
+union all 
+select 
+	'w' || way_id::text id,
+	"type", 
+	"name", 
+	wikipedia, 
+	wikidata, 
+	gvr_code,
+	case
+		when length_km > 2000 					then 'a'
+		when length_km between 1000 and 2000 	then 'b'
+		when length_km between  500 and 1000 	then 'c'
+		when length_km between  100 and  500 	then 'd'
+		when length_km between   50 and  100 	then 'e'
+		when length_km between   20 and   50 	then 'f'
+		when length_km between   10 and   20 	then 'g'
+		when length_km between    5 and   10 	then 'h'
+		when length_km between    2 and    5 	then 'i'
+		when length_km < 2 						then 'j'
+	end "class",
+	st_simplify(geom, 0.05) geom 
+from water.waterways_not_in_rels
+where "type" in ('river', 'canal') and length_km > 50;
+
+
+drop view if exists water.lin_5;
+create view water.lin_5 as 
+select 
+	'r' || relation_id::text id,
+	"type", 
+	"name", 
+	wikipedia, 
+	wikidata, 
+	gvr_code,
+	case
+		when length_km > 2000 					then 'a'
+		when length_km between 1000 and 2000 	then 'b'
+		when length_km between  500 and 1000 	then 'c'
+		when length_km between  100 and  500 	then 'd'
+		when length_km between   50 and  100 	then 'e'
+		when length_km between   20 and   50 	then 'f'
+		when length_km between   10 and   20 	then 'g'
+		when length_km between    5 and   10 	then 'h'
+		when length_km between    2 and    5 	then 'i'
+		when length_km < 2 						then 'j'
+	end "class",
+	st_simplify(geom, 0.025) geom 
+from water.waterways_from_rels
+where length_km > 20
+union all 
+select 
+	'w' || way_id::text id,
+	"type", 
+	"name", 
+	wikipedia, 
+	wikidata, 
+	gvr_code,
+	case
+		when length_km > 2000 					then 'a'
+		when length_km between 1000 and 2000 	then 'b'
+		when length_km between  500 and 1000 	then 'c'
+		when length_km between  100 and  500 	then 'd'
+		when length_km between   50 and  100 	then 'e'
+		when length_km between   20 and   50 	then 'f'
+		when length_km between   10 and   20 	then 'g'
+		when length_km between    5 and   10 	then 'h'
+		when length_km between    2 and    5 	then 'i'
+		when length_km < 2 						then 'j'
+	end "class",
+	st_simplify(geom, 0.025) geom 
+from water.waterways_not_in_rels
+where length_km > 20;
+
+
+drop view if exists water.lin_6;
+create view water.lin_6 as 
+select 
+	'r' || relation_id::text id,
+	"type", 
+	"name", 
+	wikipedia, 
+	wikidata, 
+	gvr_code,
+	case
+		when length_km > 2000 					then 'a'
+		when length_km between 1000 and 2000 	then 'b'
+		when length_km between  500 and 1000 	then 'c'
+		when length_km between  100 and  500 	then 'd'
+		when length_km between   50 and  100 	then 'e'
+		when length_km between   20 and   50 	then 'f'
+		when length_km between   10 and   20 	then 'g'
+		when length_km between    5 and   10 	then 'h'
+		when length_km between    2 and    5 	then 'i'
+		when length_km < 2 						then 'j'
+	end "class",
+	st_simplify(geom, 0.01) geom 
+from water.waterways_from_rels
+where length_km > 10
+union all 
+select 
+	'w' || way_id::text id,
+	"type", 
+	"name", 
+	wikipedia, 
+	wikidata, 
+	gvr_code,
+	case
+		when length_km > 2000 					then 'a'
+		when length_km between 1000 and 2000 	then 'b'
+		when length_km between  500 and 1000 	then 'c'
+		when length_km between  100 and  500 	then 'd'
+		when length_km between   50 and  100 	then 'e'
+		when length_km between   20 and   50 	then 'f'
+		when length_km between   10 and   20 	then 'g'
+		when length_km between    5 and   10 	then 'h'
+		when length_km between    2 and    5 	then 'i'
+		when length_km < 2 						then 'j'
+	end "class",
+	st_simplify(geom, 0.01) geom 
+from water.waterways_not_in_rels
+where length_km > 10;
+
+
+drop view if exists water.lin_7;
+create view water.lin_7 as 
+select 
+	'r' || relation_id::text id,
+	"type", 
+	"name", 
+	wikipedia, 
+	wikidata, 
+	gvr_code,
+	case
+		when length_km > 2000 					then 'a'
+		when length_km between 1000 and 2000 	then 'b'
+		when length_km between  500 and 1000 	then 'c'
+		when length_km between  100 and  500 	then 'd'
+		when length_km between   50 and  100 	then 'e'
+		when length_km between   20 and   50 	then 'f'
+		when length_km between   10 and   20 	then 'g'
+		when length_km between    5 and   10 	then 'h'
+		when length_km between    2 and    5 	then 'i'
+		when length_km < 2 						then 'j'
+	end "class",
+	st_simplify(geom, 0.005) geom 
+from water.waterways_from_rels
+where length_km > 5
+union all 
+select 
+	'w' || way_id::text id,
+	"type", 
+	"name", 
+	wikipedia, 
+	wikidata, 
+	gvr_code,
+	case
+		when length_km > 2000 					then 'a'
+		when length_km between 1000 and 2000 	then 'b'
+		when length_km between  500 and 1000 	then 'c'
+		when length_km between  100 and  500 	then 'd'
+		when length_km between   50 and  100 	then 'e'
+		when length_km between   20 and   50 	then 'f'
+		when length_km between   10 and   20 	then 'g'
+		when length_km between    5 and   10 	then 'h'
+		when length_km between    2 and    5 	then 'i'
+		when length_km < 2 						then 'j'
+	end "class",
+	st_simplify(geom, 0.005) geom 
+from water.waterways_not_in_rels
+where length_km > 5;
+
+
+drop view if exists water.lin_8;
+create view water.lin_8 as 
+select 
+	'r' || relation_id::text id,
+	"type", 
+	"name", 
+	wikipedia, 
+	wikidata, 
+	gvr_code,
+	case
+		when length_km > 2000 					then 'a'
+		when length_km between 1000 and 2000 	then 'b'
+		when length_km between  500 and 1000 	then 'c'
+		when length_km between  100 and  500 	then 'd'
+		when length_km between   50 and  100 	then 'e'
+		when length_km between   20 and   50 	then 'f'
+		when length_km between   10 and   20 	then 'g'
+		when length_km between    5 and   10 	then 'h'
+		when length_km between    2 and    5 	then 'i'
+		when length_km < 2 						then 'j'
+	end "class",
+	st_simplify(geom, 0.0025) geom 
+from water.waterways_from_rels
+where length_km > 2
+union all 
+select 
+	'w' || way_id::text id,
+	"type", 
+	"name", 
+	wikipedia, 
+	wikidata, 
+	gvr_code,
+	case
+		when length_km > 2000 					then 'a'
+		when length_km between 1000 and 2000 	then 'b'
+		when length_km between  500 and 1000 	then 'c'
+		when length_km between  100 and  500 	then 'd'
+		when length_km between   50 and  100 	then 'e'
+		when length_km between   20 and   50 	then 'f'
+		when length_km between   10 and   20 	then 'g'
+		when length_km between    5 and   10 	then 'h'
+		when length_km between    2 and    5 	then 'i'
+		when length_km < 2 						then 'j'
+	end "class",
+	st_simplify(geom, 0.0025) geom 
+from water.waterways_not_in_rels
+where length_km > 2;
+
+
+drop view if exists water.lin_9;
+create view water.lin_9 as 
+select 
+	'r' || relation_id::text id,
+	"type", 
+	"name", 
+	wikipedia, 
+	wikidata, 
+	gvr_code,
+	case
+		when length_km > 2000 					then 'a'
+		when length_km between 1000 and 2000 	then 'b'
+		when length_km between  500 and 1000 	then 'c'
+		when length_km between  100 and  500 	then 'd'
+		when length_km between   50 and  100 	then 'e'
+		when length_km between   20 and   50 	then 'f'
+		when length_km between   10 and   20 	then 'g'
+		when length_km between    5 and   10 	then 'h'
+		when length_km between    2 and    5 	then 'i'
+		when length_km < 2 						then 'j'
+	end "class",
+	geom 
+from water.waterways_from_rels
+union all 
+select 
+	'w' || way_id::text id,
+	"type", 
+	"name", 
+	wikipedia, 
+	wikidata, 
+	gvr_code,
+	case
+		when length_km > 2000 					then 'a'
+		when length_km between 1000 and 2000 	then 'b'
+		when length_km between  500 and 1000 	then 'c'
+		when length_km between  100 and  500 	then 'd'
+		when length_km between   50 and  100 	then 'e'
+		when length_km between   20 and   50 	then 'f'
+		when length_km between   10 and   20 	then 'g'
+		when length_km between    5 and   10 	then 'h'
+		when length_km between    2 and    5 	then 'i'
+		when length_km < 2 						then 'j'
+	end "class",
 	geom 
 from water.waterways_not_in_rels;
 
-create or replace view water.water_rels as
+
+
+
+drop view if exists water.pol_0;
+create view water.pol_0 as 
 select 
-	a.relation_id, 
-	a.tags ->> 'waterway' "type",	
-	a.tags ->> 'name' "name",	
-	a.tags - 'waterway' - 'name' tags, 
-	a.geom 
-from water.waterways_from_rels a 
+	area_id id,
+	case
+		when "type" in ('river','canal','water','sea','lake','pond','oxbow','reservoir','wastewater','basin') then 'water'
+		when "type" in ('wetland','marsh','bog','swamp','reedbed','wet_meadow','fen','tidalflat','saltmarsh') then 'wetland'
+		else 'other'
+	end "type",
+	"name",
+	case
+		when area_sq_km > 1000 	then 'a'
+		when area_sq_km >  500 	then 'b'
+		when area_sq_km >  100 	then 'c'
+		when area_sq_km >   50 	then 'd'
+		when area_sq_km >   20 	then 'e'
+		when area_sq_km >   10 	then 'f'
+		when area_sq_km >    5 	then 'g'
+		when area_sq_km >    2 	then 'h'
+		else 						 'i'
+	end "class",
+	st_simplify(geom, 0.5) geom 
+from water.water_areas
+where area_sq_km > 1000;
+
+
+drop view if exists water.pol_1;
+create view water.pol_1 as 
+select 
+	area_id id,
+	case
+		when "type" in ('river','canal','water','sea','lake','pond','oxbow','reservoir','wastewater','basin') then 'water'
+		when "type" in ('wetland','marsh','bog','swamp','reedbed','wet_meadow','fen','tidalflat','saltmarsh') then 'wetland'
+		else 'other'
+	end "type",
+	"name",
+	case
+		when area_sq_km > 1000 	then 'a'
+		when area_sq_km >  500 	then 'b'
+		when area_sq_km >  100 	then 'c'
+		when area_sq_km >   50 	then 'd'
+		when area_sq_km >   20 	then 'e'
+		when area_sq_km >   10 	then 'f'
+		when area_sq_km >    5 	then 'g'
+		when area_sq_km >    2 	then 'h'
+		else 						 'i'
+	end "class",
+	st_simplify(geom, 0.2) geom 
+from water.water_areas
+where area_sq_km > 500;
+
+
+drop view if exists water.pol_2;
+create view water.pol_2 as 
+select 
+	area_id id,
+	case
+		when "type" in ('river','canal','water','sea','lake','pond','oxbow','reservoir','wastewater','basin') then 'water'
+		when "type" in ('wetland','marsh','bog','swamp','reedbed','wet_meadow','fen','tidalflat','saltmarsh') then 'wetland'
+		else 'other'
+	end "type",
+	"name",
+	case
+		when area_sq_km > 1000 	then 'a'
+		when area_sq_km >  500 	then 'b'
+		when area_sq_km >  100 	then 'c'
+		when area_sq_km >   50 	then 'd'
+		when area_sq_km >   20 	then 'e'
+		when area_sq_km >   10 	then 'f'
+		when area_sq_km >    5 	then 'g'
+		when area_sq_km >    2 	then 'h'
+		else 						 'i'
+	end "class",
+	st_simplify(geom, 0.1) geom 
+from water.water_areas
+where area_sq_km > 100;
+
+
+drop view if exists water.pol_3;
+create view water.pol_3 as 
+select 
+	area_id id,
+	case
+		when "type" in ('river','canal','water','sea','lake','pond','oxbow','reservoir','wastewater','basin') then 'water'
+		when "type" in ('wetland','marsh','bog','swamp','reedbed','wet_meadow','fen','tidalflat','saltmarsh') then 'wetland'
+		else 'other'
+	end "type",
+	"name",
+	case
+		when area_sq_km > 1000 	then 'a'
+		when area_sq_km >  500 	then 'b'
+		when area_sq_km >  100 	then 'c'
+		when area_sq_km >   50 	then 'd'
+		when area_sq_km >   20 	then 'e'
+		when area_sq_km >   10 	then 'f'
+		when area_sq_km >    5 	then 'g'
+		when area_sq_km >    2 	then 'h'
+		else 						 'i'
+	end "class",
+	st_simplify(geom, 0.075) geom 
+from water.water_areas
+where area_sq_km > 50;
+
+
+drop view if exists water.pol_4;
+create view water.pol_4 as 
+select 
+	area_id id,
+	case
+		when "type" in ('river','canal','water','sea','lake','pond','oxbow','reservoir','wastewater','basin') then 'water'
+		when "type" in ('wetland','marsh','bog','swamp','reedbed','wet_meadow','fen','tidalflat','saltmarsh') then 'wetland'
+		else 'other'
+	end "type",
+	"name",
+	case
+		when area_sq_km > 1000 	then 'a'
+		when area_sq_km >  500 	then 'b'
+		when area_sq_km >  100 	then 'c'
+		when area_sq_km >   50 	then 'd'
+		when area_sq_km >   20 	then 'e'
+		when area_sq_km >   10 	then 'f'
+		when area_sq_km >    5 	then 'g'
+		when area_sq_km >    2 	then 'h'
+		else 						 'i'
+	end "class",
+	st_simplify(geom, 0.05) geom 
+from water.water_areas
+where area_sq_km > 20;
+
+
+drop view if exists water.pol_5;
+create view water.pol_5 as 
+select 
+	area_id id,
+	case
+		when "type" in ('river','canal','water','sea','lake','pond','oxbow','reservoir','wastewater','basin') then 'water'
+		when "type" in ('wetland','marsh','bog','swamp','reedbed','wet_meadow','fen','tidalflat','saltmarsh') then 'wetland'
+		else 'other'
+	end "type",
+	"name",
+	case
+		when area_sq_km > 1000 	then 'a'
+		when area_sq_km >  500 	then 'b'
+		when area_sq_km >  100 	then 'c'
+		when area_sq_km >   50 	then 'd'
+		when area_sq_km >   20 	then 'e'
+		when area_sq_km >   10 	then 'f'
+		when area_sq_km >    5 	then 'g'
+		when area_sq_km >    2 	then 'h'
+		else 						 'i'
+	end "class",
+	st_simplify(geom, 0.025) geom 
+from water.water_areas
+where area_sq_km > 10;
+
+
+drop view if exists water.pol_6;
+create view water.pol_6 as 
+select 
+	area_id id,
+	case
+		when "type" in ('river','canal','water','sea','lake','pond','oxbow','reservoir','wastewater','basin') then 'water'
+		when "type" in ('wetland','marsh','bog','swamp','reedbed','wet_meadow','fen','tidalflat','saltmarsh') then 'wetland'
+		else 'other'
+	end "type",
+	"name",
+	case
+		when area_sq_km > 1000 	then 'a'
+		when area_sq_km >  500 	then 'b'
+		when area_sq_km >  100 	then 'c'
+		when area_sq_km >   50 	then 'd'
+		when area_sq_km >   20 	then 'e'
+		when area_sq_km >   10 	then 'f'
+		when area_sq_km >    5 	then 'g'
+		when area_sq_km >    2 	then 'h'
+		else 						 'i'
+	end "class",
+	st_simplify(geom, 0.01) geom 
+from water.water_areas
+where area_sq_km > 5;
+
+
+drop view if exists water.pol_7;
+create view water.pol_7 as 
+select 
+	area_id id,
+	case
+		when "type" in ('river','canal','water','sea','lake','pond','oxbow','reservoir','wastewater','basin') then 'water'
+		when "type" in ('wetland','marsh','bog','swamp','reedbed','wet_meadow','fen','tidalflat','saltmarsh') then 'wetland'
+		else 'other'
+	end "type",
+	"name",
+	case
+		when area_sq_km > 1000 	then 'a'
+		when area_sq_km >  500 	then 'b'
+		when area_sq_km >  100 	then 'c'
+		when area_sq_km >   50 	then 'd'
+		when area_sq_km >   20 	then 'e'
+		when area_sq_km >   10 	then 'f'
+		when area_sq_km >    5 	then 'g'
+		when area_sq_km >    2 	then 'h'
+		else 						 'i'
+	end "class",
+	st_simplify(geom, 0.005) geom 
+from water.water_areas
+where area_sq_km > 2;
+
+
+drop view if exists water.pol_8;
+create view water.pol_8 as 
+select 
+	area_id id,
+	case
+		when "type" in ('river','canal','water','sea','lake','pond','oxbow','reservoir','wastewater','basin') then 'water'
+		when "type" in ('wetland','marsh','bog','swamp','reedbed','wet_meadow','fen','tidalflat','saltmarsh') then 'wetland'
+		else 'other'
+	end "type",
+	"name",
+	case
+		when area_sq_km > 1000 	then 'a'
+		when area_sq_km >  500 	then 'b'
+		when area_sq_km >  100 	then 'c'
+		when area_sq_km >   50 	then 'd'
+		when area_sq_km >   20 	then 'e'
+		when area_sq_km >   10 	then 'f'
+		when area_sq_km >    5 	then 'g'
+		when area_sq_km >    2 	then 'h'
+		else 						 'i'
+	end "class",
+	st_simplify(geom, 0.0025) geom 
+from water.water_areas;
+
+
+drop view if exists water.pol_9;
+create view water.pol_9 as 
+select 
+	area_id id,
+	case
+		when "type" in ('river','canal','water','sea','lake','pond','oxbow','reservoir','wastewater','basin') then 'water'
+		when "type" in ('wetland','marsh','bog','swamp','reedbed','wet_meadow','fen','tidalflat','saltmarsh') then 'wetland'
+		else 'other'
+	end "type",
+	"name",
+	case
+		when area_sq_km > 1000 	then 'a'
+		when area_sq_km >  500 	then 'b'
+		when area_sq_km >  100 	then 'c'
+		when area_sq_km >   50 	then 'd'
+		when area_sq_km >   20 	then 'e'
+		when area_sq_km >   10 	then 'f'
+		when area_sq_km >    5 	then 'g'
+		when area_sq_km >    2 	then 'h'
+		else 						 'i'
+	end "class",
+	geom 
+from water.water_areas;
+
 
 
 
