@@ -32,8 +32,8 @@
       ],
       "minZoom": 0,
       "maxZoom": 14,
-      "maxzoom": 7,
-      "minzoom": 2
+      "maxzoom": 9,
+      "minzoom": 0
     }
   },
   "sprite": "https://openmaptiles.github.io/positron-gl-style/sprite",
@@ -794,7 +794,7 @@
         "text-offset": [0.5, 0],
         "text-size": 10,
         "text-transform": "uppercase",
-        "visibility": "visible"
+        "visibility": "none"
       },
       "paint": {
         "text-color": "rgb(117, 129, 145)",
@@ -819,7 +819,7 @@
         "text-offset": [0.5, 0],
         "text-size": 10,
         "text-transform": "uppercase",
-        "visibility": "visible"
+        "visibility": "none"
       },
       "paint": {
         "text-color": "rgb(117, 129, 145)",
@@ -844,7 +844,7 @@
         "text-justify": "left",
         "text-offset": [0.5, 0.2],
         "text-size": 10,
-        "visibility": "visible"
+        "visibility": "none"
       },
       "paint": {
         "icon-opacity": 0.7,
@@ -871,7 +871,7 @@
         "text-justify": "left",
         "text-offset": [0.5, 0.2],
         "text-size": 10,
-        "visibility": "visible"
+        "visibility": "none"
       },
       "paint": {
         "icon-opacity": 0.7,
@@ -902,7 +902,7 @@
         "text-justify": "left",
         "text-offset": [0.5, 0.2],
         "text-size": 10,
-        "visibility": "visible"
+        "visibility": "none"
       },
       "paint": {
         "icon-opacity": 0.7,
@@ -934,7 +934,7 @@
         "text-offset": [0.5, 0.2],
         "text-size": 14,
         "text-transform": "uppercase",
-        "visibility": "visible"
+        "visibility": "none"
       },
       "paint": {
         "icon-opacity": 0.7,
@@ -971,7 +971,7 @@
         "text-offset": [0.5, 0.2],
         "text-size": 14,
         "text-transform": "uppercase",
-        "visibility": "visible"
+        "visibility": "none"
       },
       "paint": {
         "icon-opacity": 0.7,
@@ -994,7 +994,7 @@
         "text-font": ["Metropolis Regular", "Noto Sans Regular"],
         "text-size": 10,
         "text-transform": "uppercase",
-        "visibility": "visible"
+        "visibility": "none"
       },
       "paint": {
         "text-color": "rgb(113, 129, 144)",
@@ -1021,7 +1021,7 @@
         "text-font": ["Metropolis Light Italic", "Noto Sans Italic"],
         "text-size": {"base": 1, "stops": [[0, 9], [6, 11]]},
         "text-transform": "uppercase",
-        "visibility": "visible"
+        "visibility": "none"
       },
       "paint": {
         "text-color": {
@@ -1051,7 +1051,7 @@
         "text-font": ["Metropolis Regular", "Noto Sans Regular"],
         "text-size": {"base": 1, "stops": [[0, 10], [6, 12]]},
         "text-transform": "uppercase",
-        "visibility": "visible"
+        "visibility": "none"
       },
       "paint": {
         "text-color": {
@@ -1082,7 +1082,7 @@
         "text-font": ["Metropolis Regular", "Noto Sans Regular"],
         "text-size": {"base": 1.4, "stops": [[0, 10], [3, 12], [4, 14]]},
         "text-transform": "uppercase",
-        "visibility": "visible"
+        "visibility": "none"
       },
       "paint": {
         "text-color": {
@@ -1094,12 +1094,32 @@
       }
     },
     {
-      "id": "err_watercource-line-copy",
+      "id": "watercource-not-in-rels",
+      "type": "line",
+      "source": "openmaptiles",
+      "source-layer": "waterway",
+      "filter": ["all"],
+      "layout": {"visibility": "none"},
+      "paint": {"line-color": "rgba(152, 0, 254, 1)", "line-width": 0.8}
+    },
+    {
+      "id": "watercource-rels-other",
       "type": "line",
       "source": "ogr2ogr",
       "source-layer": "water_rels",
+      "minzoom": 7,
+      "filter": ["all", ["!=", "type", "river"]],
       "layout": {"visibility": "visible"},
-      "paint": {"line-color": "rgba(0, 3, 255, 1)", "line-width": 0.4}
+      "paint": {"line-color": "rgba(135, 137, 255, 1)", "line-width": 0.8}
+    },
+    {
+      "id": "watercource-rels-rivers",
+      "type": "line",
+      "source": "ogr2ogr",
+      "source-layer": "water_rels",
+      "filter": ["all", ["==", "type", "river"]],
+      "layout": {"visibility": "visible"},
+      "paint": {"line-color": "rgba(4, 5, 248, 1)", "line-width": 1}
     },
     {
       "id": "err_watercource-line",
@@ -1107,7 +1127,7 @@
       "source": "ogr2ogr",
       "source-layer": "err_watercourse",
       "layout": {"visibility": "visible"},
-      "paint": {"line-color": "rgba(255, 162, 0, 1)", "line-width": 1}
+      "paint": {"line-color": "rgba(255, 162, 0, 1)", "line-width": 1.4}
     },
     {
       "id": "err_spring",
@@ -1135,6 +1155,115 @@
         "circle-opacity": 0.5,
         "circle-stroke-width": 1,
         "circle-radius": 2
+      }
+    },
+    {
+      "id": "debug",
+      "type": "line",
+      "source": "ogr2ogr",
+      "source-layer": "water_lines",
+      "layout": {"visibility": "none"},
+      "paint": {"line-color": "rgba(255, 0, 0, 1)"}
+    },
+    {
+      "id": "wetland-area",
+      "type": "fill",
+      "source": "openmaptiles",
+      "source-layer": "landcover",
+      "filter": ["all", ["==", "class", "wetland"]],
+      "paint": {"fill-color": "rgba(192, 178, 178, 0.57)"}
+    },
+    {
+      "id": "water-area",
+      "type": "fill",
+      "source": "openmaptiles",
+      "source-layer": "water",
+      "paint": {"fill-color": "rgba(186, 186, 186, 1)"}
+    },
+    {
+      "id": "water-lines",
+      "type": "line",
+      "source": "ogr2ogr",
+      "source-layer": "water_lines",
+      "layout": {"visibility": "visible"},
+      "paint": {"line-color": "rgba(130, 130, 130, 1)"}
+    },
+    {
+      "id": "water-label-stream",
+      "type": "symbol",
+      "source": "ogr2ogr",
+      "source-layer": "water_lines",
+      "filter": ["all", ["==", "type", "stream"], [">", "name", "\"\""]],
+      "layout": {
+        "symbol-placement": "line",
+        "text-field": "руч. {name}",
+        "text-size": 12,
+        "text-line-height": 1,
+        "text-ignore-placement": false,
+        "symbol-spacing": 250,
+        "text-font": ["Roboto Light Italic", "Arial Unicode MS Regular"],
+        "text-max-angle": 90,
+        "text-keep-upright": true,
+        "text-writing-mode": [],
+        "symbol-avoid-edges": false
+      },
+      "paint": {
+        "text-color": "rgba(83, 82, 82, 1)",
+        "text-halo-color": "rgba(255, 255, 255, 0.86)",
+        "text-halo-width": 2,
+        "text-halo-blur": 1
+      }
+    },
+    {
+      "id": "water-label-canal",
+      "type": "symbol",
+      "source": "ogr2ogr",
+      "source-layer": "water_lines",
+      "filter": ["all", ["==", "type", "canal"], [">", "name", "\"\""]],
+      "layout": {
+        "symbol-placement": "line",
+        "text-field": "кан. {name}",
+        "text-size": 14,
+        "text-line-height": 1,
+        "text-ignore-placement": false,
+        "symbol-spacing": 300,
+        "text-font": ["Roboto Regular", "Arial Unicode MS Regular"],
+        "text-max-angle": 30,
+        "text-keep-upright": true,
+        "text-writing-mode": [],
+        "symbol-avoid-edges": false
+      },
+      "paint": {
+        "text-color": "rgba(130, 130, 130, 1)",
+        "text-halo-color": "rgba(255, 255, 255, 0.75)",
+        "text-halo-width": 3,
+        "text-halo-blur": 1
+      }
+    },
+    {
+      "id": "water-label-river",
+      "type": "symbol",
+      "source": "ogr2ogr",
+      "source-layer": "water_lines",
+      "filter": ["all", ["==", "type", "river"], [">", "name", "\"\""]],
+      "layout": {
+        "symbol-placement": "line",
+        "text-field": "{name}",
+        "text-size": 14,
+        "text-line-height": 1,
+        "text-ignore-placement": false,
+        "symbol-spacing": 250,
+        "text-font": ["Roboto Regular", "Arial Unicode MS Regular"],
+        "text-max-angle": 30,
+        "text-keep-upright": true,
+        "text-writing-mode": [],
+        "symbol-avoid-edges": false
+      },
+      "paint": {
+        "text-color": "rgba(130, 130, 130, 1)",
+        "text-halo-color": "rgba(255, 255, 255, 0.75)",
+        "text-halo-width": 3,
+        "text-halo-blur": 1
       }
     }
   ],
