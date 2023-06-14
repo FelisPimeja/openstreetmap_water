@@ -1179,6 +1179,7 @@
       "type": "line",
       "source": "ogr2ogr",
       "source-layer": "water_lines",
+      "maxzoom": 14,
       "filter": ["all", ["==", "class", "a"]],
       "layout": {"visibility": "visible"},
       "paint": {
@@ -1204,6 +1205,7 @@
       "type": "line",
       "source": "ogr2ogr",
       "source-layer": "water_lines",
+      "maxzoom": 14,
       "filter": ["all", ["==", "class", "b"]],
       "layout": {"visibility": "visible"},
       "paint": {
@@ -1228,6 +1230,7 @@
       "type": "line",
       "source": "ogr2ogr",
       "source-layer": "water_lines",
+      "maxzoom": 14,
       "filter": ["all", ["==", "class", "c"]],
       "layout": {"visibility": "visible"},
       "paint": {
@@ -1251,6 +1254,7 @@
       "type": "line",
       "source": "ogr2ogr",
       "source-layer": "water_lines",
+      "maxzoom": 14,
       "filter": ["all", ["==", "class", "d"]],
       "layout": {"visibility": "visible"},
       "paint": {
@@ -1273,6 +1277,7 @@
       "type": "line",
       "source": "ogr2ogr",
       "source-layer": "water_lines",
+      "maxzoom": 15,
       "filter": ["all", ["==", "class", "e"]],
       "layout": {"visibility": "visible"},
       "paint": {
@@ -1287,6 +1292,7 @@
       "type": "line",
       "source": "ogr2ogr",
       "source-layer": "water_lines",
+      "maxzoom": 13,
       "filter": ["all", ["==", "class", "f"]],
       "layout": {"visibility": "visible"},
       "paint": {
@@ -1301,6 +1307,7 @@
       "type": "line",
       "source": "ogr2ogr",
       "source-layer": "water_lines",
+      "maxzoom": 13,
       "filter": ["all", ["==", "class", "g"]],
       "layout": {"visibility": "visible"},
       "paint": {
@@ -1313,6 +1320,7 @@
       "type": "line",
       "source": "ogr2ogr",
       "source-layer": "water_lines",
+      "maxzoom": 12,
       "filter": ["all", ["==", "class", "h"]],
       "layout": {"visibility": "visible"},
       "paint": {
@@ -1325,6 +1333,7 @@
       "type": "line",
       "source": "ogr2ogr",
       "source-layer": "water_lines",
+      "maxzoom": 13,
       "filter": ["all", ["in", "class", "i", "j"]],
       "layout": {"visibility": "visible"},
       "paint": {
@@ -1333,10 +1342,25 @@
       }
     },
     {
+      "id": "waterlines",
+      "type": "line",
+      "source": "openmaptiles",
+      "source-layer": "waterway",
+      "minzoom": 12,
+      "maxzoom": 24,
+      "filter": ["all"],
+      "layout": {"visibility": "visible"},
+      "paint": {
+        "line-color": "rgba(130, 130, 130, 1)",
+        "line-width": {"stops": [[13, 0.5], [15, 1.5], [23, 2]]}
+      }
+    },
+    {
       "id": "waterlabels-stream",
       "type": "symbol",
       "source": "ogr2ogr",
       "source-layer": "water_lines",
+      "minzoom": 12,
       "filter": ["all", ["==", "type", "stream"], [">", "name", "\"\""]],
       "layout": {
         "symbol-placement": "line",
@@ -1346,7 +1370,7 @@
         "text-ignore-placement": false,
         "symbol-spacing": 250,
         "text-font": ["Roboto Light Italic", "Arial Unicode MS Regular"],
-        "text-max-angle": 90,
+        "text-max-angle": 60,
         "text-keep-upright": true,
         "text-writing-mode": [],
         "symbol-avoid-edges": false,
@@ -1440,13 +1464,15 @@
         "text-allow-overlap": false,
         "text-anchor": "center",
         "symbol-z-order": "auto",
-        "text-offset": [0, -0.5]
+        "text-offset": {
+          "stops": [[11, [0, -0.5]], [13, [0, -0.6]], [15, [0, -0.8]]]
+        }
       },
       "paint": {
-        "text-color": "rgba(130, 130, 130, 1)",
+        "text-color": "rgba(91, 91, 91, 1)",
         "text-halo-color": "rgba(255, 255, 255, 0.75)",
-        "text-halo-width": 2,
-        "text-halo-blur": 1
+        "text-halo-width": 0,
+        "text-halo-blur": 0
       }
     },
     {
