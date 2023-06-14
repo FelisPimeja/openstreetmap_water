@@ -40,38 +40,6 @@
   "glyphs": "https://api.maptiler.com/fonts/{fontstack}/{range}.pbf?key=z9jR5pdnvvxTxnCPJt9c",
   "layers": [
     {
-      "id": "back-place_capital",
-      "type": "symbol",
-      "metadata": {"mapbox:group": "101da9f13b64a08fa4b6ac1168e89e5f"},
-      "source": "openmaptiles",
-      "source-layer": "place",
-      "maxzoom": 12,
-      "filter": [
-        "all",
-        ["==", "$type", "Point"],
-        ["all", ["==", "capital", 2], ["==", "class", "city"]]
-      ],
-      "layout": {
-        "icon-image": {"base": 1, "stops": [[0, "star-11"], [8, ""]]},
-        "icon-size": 1,
-        "text-anchor": {"base": 1, "stops": [[0, "left"], [8, "center"]]},
-        "text-field": "{name:ru}",
-        "text-font": ["Metropolis Regular", "Noto Sans Regular"],
-        "text-justify": "left",
-        "text-offset": [0.5, 0.2],
-        "text-size": 14,
-        "text-transform": "uppercase",
-        "visibility": "none"
-      },
-      "paint": {
-        "icon-opacity": 0.7,
-        "text-color": "rgb(117, 129, 145)",
-        "text-halo-blur": 1,
-        "text-halo-color": "rgb(242,243,240)",
-        "text-halo-width": 1
-      }
-    },
-    {
       "id": "back-background",
       "type": "background",
       "paint": {"background-color": "rgb(242,243,240)"}
@@ -845,7 +813,11 @@
       "filter": ["all", ["==", "$type", "Point"], ["==", "class", "suburb"]],
       "layout": {
         "text-anchor": "center",
-        "text-field": "{name:latin}\n{name:nonlatin}",
+        "text-field": [
+          "coalesce",
+          ["string", ["get", "name:ru"]],
+          ["string", ["get", "name:latin\n"]]
+        ],
         "text-font": ["Metropolis Regular", "Noto Sans Regular"],
         "text-justify": "center",
         "text-offset": [0.5, 0],
@@ -869,7 +841,11 @@
       "maxzoom": 12,
       "filter": ["all", ["==", "$type", "Point"], ["==", "class", "state"]],
       "layout": {
-        "text-field": "{name:ru}",
+        "text-field": [
+          "coalesce",
+          ["string", ["get", "name:ru"]],
+          ["string", ["get", "name:latin"]]
+        ],
         "text-font": ["Metropolis Regular", "Noto Sans Regular"],
         "text-size": 10,
         "text-transform": "uppercase",
@@ -896,7 +872,11 @@
         ["!has", "iso_a2"]
       ],
       "layout": {
-        "text-field": "{name:latin}",
+        "text-field": [
+          "coalesce",
+          ["string", ["get", "name:ru"]],
+          ["string", ["get", "name:latin"]]
+        ],
         "text-font": ["Metropolis Light Italic", "Noto Sans Italic"],
         "text-size": {"base": 1, "stops": [[0, 9], [6, 11]]},
         "text-transform": "uppercase",
@@ -926,7 +906,11 @@
         ["has", "iso_a2"]
       ],
       "layout": {
-        "text-field": "{name:ru}",
+        "text-field": [
+          "coalesce",
+          ["string", ["get", "name:ru"]],
+          ["string", ["get", "name:latin"]]
+        ],
         "text-font": ["Metropolis Regular", "Noto Sans Regular"],
         "text-size": {"base": 1, "stops": [[0, 10], [6, 12]]},
         "text-transform": "uppercase",
@@ -957,7 +941,11 @@
       ],
       "layout": {
         "text-anchor": "center",
-        "text-field": "{name:ru}",
+        "text-field": [
+          "coalesce",
+          ["string", ["get", "name:ru"]],
+          ["string", ["get", "name:latin"]]
+        ],
         "text-font": ["Metropolis Regular", "Noto Sans Regular"],
         "text-size": {"base": 1.4, "stops": [[0, 10], [3, 12], [4, 14]]},
         "text-transform": "uppercase",
@@ -1275,7 +1263,12 @@
         "icon-image": {"base": 1, "stops": [[0, "circle-11"], [8, ""]]},
         "icon-size": 0.4,
         "text-anchor": {"base": 1, "stops": [[0, "left"], [8, "center"]]},
-        "text-field": "{name:ru}",
+        "text-field": [
+          "coalesce",
+          ["string", ["get", "name:ru"]],
+          ["string", ["get", "name:latin"]],
+          ["string", ["get", "name"]]
+        ],
         "text-font": ["Metropolis Regular", "Noto Sans Regular"],
         "text-justify": "left",
         "text-offset": [0.5, 0.2],
@@ -1306,7 +1299,12 @@
         "icon-image": {"base": 1, "stops": [[0, "circle-11"], [8, ""]]},
         "icon-size": 0.4,
         "text-anchor": {"base": 1, "stops": [[0, "left"], [8, "center"]]},
-        "text-field": "{name:ru}",
+        "text-field": [
+          "coalesce",
+          ["string", ["get", "name:ru"]],
+          ["string", ["get", "name:latin"]],
+          ["string", ["get", "name"]]
+        ],
         "text-font": ["Metropolis Regular", "Noto Sans Regular"],
         "text-justify": "left",
         "text-offset": [0.5, 0.2],
@@ -1342,7 +1340,48 @@
         "icon-image": {"base": 1, "stops": [[0, "circle-11"], [8, ""]]},
         "icon-size": 0.4,
         "text-anchor": {"base": 1, "stops": [[0, "left"], [8, "center"]]},
-        "text-field": "{name:latin}\n{name:nonlatin}",
+        "text-field": [
+          "coalesce",
+          ["string", ["get", "name:ru"]],
+          ["string", ["get", "name:latin"]],
+          ["string", ["get", "name"]]
+        ],
+        "text-font": ["Metropolis Regular", "Noto Sans Regular"],
+        "text-justify": "left",
+        "text-offset": [0.5, 0.2],
+        "text-size": 14,
+        "text-transform": "uppercase",
+        "visibility": "visible"
+      },
+      "paint": {
+        "icon-opacity": 0.7,
+        "text-color": "rgb(117, 129, 145)",
+        "text-halo-blur": 1,
+        "text-halo-color": "rgb(242,243,240)",
+        "text-halo-width": 1
+      }
+    },
+    {
+      "id": "place_capital",
+      "type": "symbol",
+      "metadata": {"mapbox:group": "101da9f13b64a08fa4b6ac1168e89e5f"},
+      "source": "openmaptiles",
+      "source-layer": "place",
+      "maxzoom": 12,
+      "filter": [
+        "all",
+        ["==", "$type", "Point"],
+        ["all", ["==", "capital", 2], ["==", "class", "city"]]
+      ],
+      "layout": {
+        "icon-image": {"base": 1, "stops": [[0, "star-11"], [8, ""]]},
+        "icon-size": 1,
+        "text-anchor": {"base": 1, "stops": [[0, "left"], [8, "center"]]},
+        "text-field": [
+          "coalesce",
+          ["string", ["get", "name:ru"]],
+          ["string", ["get", "name"]]
+        ],
         "text-font": ["Metropolis Regular", "Noto Sans Regular"],
         "text-justify": "left",
         "text-offset": [0.5, 0.2],
@@ -1486,7 +1525,11 @@
       "filter": ["all", [">", "name", "\"\""]],
       "layout": {
         "symbol-placement": "point",
-        "text-field": "{name}",
+        "text-field": [
+          "coalesce",
+          ["string", ["get", "name:ru"]],
+          ["string", ["get", "name"]]
+        ],
         "text-size": 14,
         "text-line-height": 1,
         "text-ignore-placement": false,
