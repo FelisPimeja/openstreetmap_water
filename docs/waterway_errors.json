@@ -35,14 +35,6 @@
       "maxzoom": 9,
       "minzoom": 0
     },
-    "shaded_relief": {
-      "type": "raster",
-      "tiles": [
-        "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"
-      ],
-      "minzoom": 3,
-      "maxzoom": 12
-    },
     "ne_shaded_relief": {
       "type": "raster",
       "tiles": [
@@ -50,6 +42,15 @@
       ],
       "minzoom": 0,
       "maxzoom": 14
+    },
+    "shaded_relief": {
+      "type": "raster-dem",
+      "tiles": [
+        "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"
+      ],
+      "minzoom": 0,
+      "maxzoom": 15,
+      "encoding": "terrarium"
     }
   },
   "sprite": "https://api.maptiler.com/maps/openstreetmap/sprite",
@@ -142,6 +143,16 @@
       "paint": {
         "fill-color": "rgb(220,224,220)",
         "fill-opacity": {"base": 1, "stops": [[8, 0], [12, 1]]}
+      }
+    },
+    {
+      "id": "shaded-relief",
+      "type": "hillshade",
+      "source": "shaded_relief",
+      "paint": {
+        "hillshade-shadow-color": "hsl(39, 21%, 33%)",
+        "hillshade-illumination-direction": 315,
+        "hillshade-exaggeration": 0.3
       }
     },
     {
@@ -978,17 +989,6 @@
       }
     },
     {
-      "id": "shaded-relief2",
-      "type": "raster",
-      "source": "ne_shaded_relief",
-      "maxzoom": 7,
-      "paint": {
-        "raster-opacity": {"stops": [[4, 1], [8, 0]]},
-        "raster-saturation": -1,
-        "raster-contrast": 0.2
-      }
-    },
-    {
       "id": "err-watercource-not-in-rels",
       "type": "line",
       "source": "openmaptiles",
@@ -1574,19 +1574,6 @@
         "text-halo-color": "rgba(255, 255, 255, 0.86)",
         "text-halo-width": 1,
         "text-halo-blur": 0
-      }
-    },
-    {
-      "id": "shaded-relief",
-      "type": "raster",
-      "source": "shaded_relief",
-      "layout": {"visibility": "none"},
-      "paint": {
-        "raster-hue-rotate": 0,
-        "raster-opacity": 1,
-        "raster-brightness-min": 0,
-        "raster-saturation": 0,
-        "raster-contrast": 0
       }
     }
   ],
