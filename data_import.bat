@@ -17,7 +17,7 @@ psql -U %pguser% -d %pgdb% -c ^
 psql -U %pguser% -d %pgdb% -c "\copy water.wikidata_waterways_russia FROM %wikiDir%\wikidata.csv delimiter ',' csv header"
 
 @REM Download OSM extract
-curl.exe -L -o %osmData% %osmDataUrl%
+cmd /c "curl %osmDataUrl% >> %osmData%"
 
 @REM Import OSM extract into Postgres DB
 osm2pgsql -c -d %pgdb% -U %pguser% -H %pghost% -O flex -S %flexConf% --hstore --multi-geometry %osmData%
