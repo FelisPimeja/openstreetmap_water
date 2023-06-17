@@ -682,8 +682,8 @@ with recursive waterway as (
 	from tmp_ways_info w
 	join tmp_points_info s1 
 		on s1.id = w.start_id
-	where s1.cnt_starts > 0  
-		and s1.cnt_ends = 0
+	where s1.cnt_ends > 1 
+		or (s1.cnt_starts > 0 and s1.cnt_ends = 0)
 	--
 	union all
 	--
@@ -711,105 +711,15 @@ with recursive waterway as (
 select distinct on(way_id_orig) * 
 from waterway 
 order by way_id_orig, i desc;
--- 44s
+-- 1m 40s
 
 
 
 drop table if exists water.tmp_built_waterways2;
 create table water.tmp_built_waterways2 as
---
-with recursive waterway as (
-	select 
-		1 i, 
-		w.way_id,
-		w.way_id 		way_id_orig,
-		array[w.way_id] way_ids_arr,
-		w.start_id,
-		w.end_id,
-		w.way_name,
-		w.rel_id
-	from tmp_ways_info w
-	join tmp_points_info s1 
-		on s1.id = w.start_id
-	where s1.cnt_ends > 1
-	--
-	union all
-	--
-	select 
-		i + 1 i, 
-		w2.way_id,
-		w1.way_id_orig,
-		w1.way_ids_arr || w2.way_id 									way_ids_arr,
-		w2.start_id,
-		w2.end_id,
-		coalesce(nullif(w1.way_name, ''), nullif(w2.way_name, ''), '')	way_name,
-		coalesce(w1.rel_id, w2.rel_id)									rel_id
-	from waterway w1
-	join tmp_points_info p 
-		on w1.end_id = p.id
-			and p.cnt_starts = 1
-	left join tmp_ways_info w2	
-		on w1.end_id = w2.start_id
-			and w2.way_id <> all(w1.way_ids_arr)
-			and (coalesce(nullif(w2.way_name,''), w1.way_name) = coalesce(nullif(w1.way_name, ''), w2.way_name) -- check whether name is the same or blank
-				or coalesce(w2.rel_id, w1.rel_id, 0) = coalesce(w1.rel_id, w2.rel_id, 0)						-- check whether relation_id is the same or null
-			)
-			where w2.way_id is not null
-)
-select distinct on(way_id_orig) * 
-from waterway 
-order by way_id_orig, i desc;
--- 40s сузить джоин до выборки из первого запроса?
-
-
-
-drop table if exists water.built_waterways1;
-create table water.built_waterways1 as
-select 
-	c.way_id_orig,
-	c.way_ids_arr,
-	c.i 												iterations,
-	max(w.way_name) 									name,
-	max(w.rel_id) filter(where w.rel_id is not null) 	rel_id,
-	sum(length_km) 										length_km,
-	st_collect(w.start_pnt) 							pnts,
-	st_collect(w.geom) 									geom
-from tmp_built_waterways1 c
-left join tmp_ways_info w 
-	on w.way_id = any(c.way_ids_arr)
-group by c.way_id_orig,	c.way_ids_arr, c.i;
--- 15s
-
-
-drop table if exists water.built_waterways2;
-create table water.built_waterways2 as
-select 
-	c.way_id_orig,
-	c.way_ids_arr,
-	c.i 												iterations,
-	max(w.way_name) 									name,
-	max(w.rel_id) filter(where w.rel_id is not null) 	rel_id,
-	sum(length_km) 										length_km,
-	st_collect(w.start_pnt) 							pnts,
-	st_collect(w.geom) 									geom
-from tmp_built_waterways2 c
-left join tmp_ways_info w 
-	on w.way_id = any(c.way_ids_arr)
-group by c.way_id_orig,	c.way_ids_arr, c.i;
--- 5s
-
-
-
-
-
-
-drop table if exists water.tmp_built_waterways3;
-create table water.tmp_built_waterways3 as
 with recursive waterway as ((
-	with united as (
-		select unnest(way_ids_arr) way_id from built_waterways1
-		union all
-		select unnest(way_ids_arr) way_id from built_waterways2
+	with ways_used as (
+		select unnest(way_ids_arr) way_id from tmp_built_waterways1
 	),
 	ways_left as (
 		select distinct 
@@ -819,7 +729,7 @@ with recursive waterway as ((
 			w.way_name, 
 			w.rel_id
 		from tmp_ways_info w
-		left join united u using(way_id)
+		left join ways_used u using(way_id)
 		where u.way_id is null
 	),
 	ids as (
@@ -881,8 +791,8 @@ order by way_id_orig, i desc;
 -- 5s 
 
 
-drop table if exists water.built_waterways3;
-create table water.built_waterways3 as
+drop table if exists water.built_waterways;
+create table water.built_waterways as
 select 
 	c.way_id_orig,
 	c.way_ids_arr,
@@ -892,19 +802,17 @@ select
 	sum(length_km) 										length_km,
 	st_collect(w.start_pnt) 							pnts,
 	st_collect(w.geom) 									geom
-from tmp_built_waterways3 c
+from (
+	select * from tmp_built_waterways1 union all
+	select * from tmp_built_waterways2
+) c
 left join tmp_ways_info w 
 	on w.way_id = any(c.way_ids_arr)
 group by c.way_id_orig,	c.way_ids_arr, c.i;
--- 1s
+-- 40s
 
 
-drop table if exists built_waterways;
-create table built_waterways as
-select * from built_waterways1 union all
-select * from built_waterways2 union all
-select * from built_waterways3;
--- 30s
+
 
 
 
