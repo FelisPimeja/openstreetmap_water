@@ -1,5 +1,6 @@
 set search_path = water, public;
 
+
 -- Waterway dead ends:
 drop table if exists water.dead_ends; 
 create table water.dead_ends as 
@@ -590,40 +591,55 @@ drop table if exists tmp_rels_info;
 create table tmp_rels_info as 
 select 
 	relation_id rel_id, 
-	(jsonb_array_elements(members) ->> 'ref')::int8 way_id
+	(jsonb_array_elements(members) ->> 'ref' )::int8 way_id,
+	(jsonb_array_elements(members) ->> 'role') way_role
 from water_relations;
 
 create index on tmp_rels_info(way_id);
+create index on tmp_rels_info(way_role);
 
-
+--select distinct tags ->> 'waterway', count(*) cnt from water_ways group by 1 order by cnt desc;
+--
+--select * from water_ways 
+--where tags ? 'waterway' is false 
+--	and tags ->> 'natural' not in ('water', 'wetland');
+--
+--select * from water_ways 
+--where tags ->> 'waterway' = 'waterfall';
 
 drop table if exists tmp_ways_info;
 create table tmp_ways_info as 
 select 
 	way_id,
 	rel_id,
+	way_role rel_role,
 	coalesce(tags ->> 'waterway', '') 	way_type,
 	coalesce(tags ->> 'name', '') 		way_name,
 	st_length(geom::geography)::numeric / 1000 length_km,
-		((round((st_x((st_startpoint(geom)))::numeric) * 10000) + 118000000)::text || (round((st_y((st_startpoint(geom)))::numeric) * 10000) + 118000000)::text)::int8 start_id,
-		((round((st_x((  st_endpoint(geom)))::numeric) * 10000) + 118000000)::text || (round((st_y((  st_endpoint(geom)))::numeric) * 10000) + 118000000)::text)::int8 end_id,
+		((round((st_x((st_startpoint(geom)))::numeric) * 100000) + 18000000)::text || (round((st_y((st_startpoint(geom)))::numeric) * 100000) + 18000000)::text)::int8 start_id,
+		((round((st_x((  st_endpoint(geom)))::numeric) * 100000) + 18000000)::text || (round((st_y((  st_endpoint(geom)))::numeric) * 100000) + 18000000)::text)::int8 end_id,
 	st_startpoint(geom) start_pnt,
 	st_endpoint(geom) 	end_pnt,
 	geom	
 from water_ways w
 left join tmp_rels_info r using(way_id)
-where tags ->> 'waterway' in ('river', 'canal');
+where 	tags ? 'waterway' is true
+	and tags ->> 'waterway' not in ('lock_gate', 'weir', 'waterfall')
+	and coalesce(tags ->> 'natural', '')  not in ('water', 'wetland')
+	and coalesce(r.way_role, '') in ('main_stream', 'side_stream', '');
+-- 1m 30s
 
 create index on tmp_ways_info(way_id);
 create index on tmp_ways_info(rel_id);
+create index on tmp_ways_info(rel_role);
 create index on tmp_ways_info(way_type);
 create index on tmp_ways_info(way_name);
 create index on tmp_ways_info(start_id);
 create index on tmp_ways_info(end_id);
-create index on tmp_ways_info using gist(geom);
-create index on tmp_ways_info using gist(start_pnt);
-create index on tmp_ways_info using gist(end_pnt);
-
+--create index on tmp_ways_info using gist(geom);
+--create index on tmp_ways_info using gist(start_pnt);
+--create index on tmp_ways_info using gist(end_pnt);
+--15 s
 
 
 drop table if exists tmp_points_info;
@@ -648,7 +664,7 @@ group by id, i.geom;
 create index on tmp_points_info(id);
 create index on tmp_points_info(cnt_starts, cnt_ends);
 create index on tmp_points_info using gist(geom);
--- 10s
+-- 25s
 
 
 -- Destinations for dead ends (end without starts)
@@ -666,6 +682,30 @@ create index on tmp_points_info using gist(geom);
 ------------------------------------------------------------
 -- Recursive watercourse building
 ------------------------------------------------------------
+drop table if exists water.tmp_ways_info2;
+create table water.tmp_ways_info2 as 
+select w.*
+from tmp_ways_info w
+join tmp_points_info p1 
+	on w.start_id = p1.id
+join tmp_points_info p2 
+	on w.end_id   = p2.id
+where not (p1.cnt_starts = 1
+	and p2.cnt_starts = 0
+	and p1.cnt_ends = 0
+	and p2.cnt_ends = 1
+);
+
+create index on tmp_ways_info2(way_id);
+create index on tmp_ways_info2(rel_id);
+create index on tmp_ways_info2(rel_role);
+create index on tmp_ways_info2(way_type);
+create index on tmp_ways_info2(way_name);
+create index on tmp_ways_info2(start_id);
+create index on tmp_ways_info2(end_id);
+-- 30s
+
+
 drop table if exists water.tmp_built_waterways1;
 create table water.tmp_built_waterways1 as
 --
@@ -679,7 +719,7 @@ with recursive waterway as (
 		w.end_id,
 		w.way_name,
 		w.rel_id
-	from tmp_ways_info w
+	from tmp_ways_info2 w
 	join tmp_points_info s1 
 		on s1.id = w.start_id
 	where s1.cnt_ends > 1 
@@ -700,7 +740,7 @@ with recursive waterway as (
 	join tmp_points_info p 
 		on w1.end_id = p.id
 			and p.cnt_starts = 1
-	left join tmp_ways_info w2	
+	left join tmp_ways_info2 w2	
 		on w1.end_id = w2.start_id
 			and w2.way_id <> all(w1.way_ids_arr)
 			and (coalesce(nullif(w2.way_name,''), w1.way_name) = coalesce(nullif(w1.way_name, ''), w2.way_name) -- check whether name is the same or blank
@@ -711,7 +751,7 @@ with recursive waterway as (
 select distinct on(way_id_orig) * 
 from waterway 
 order by way_id_orig, i desc;
--- 1m 40s
+-- 2m 30s
 
 
 
@@ -728,7 +768,7 @@ with recursive waterway as ((
 			w.end_id, 
 			w.way_name, 
 			w.rel_id
-		from tmp_ways_info w
+		from tmp_ways_info2 w
 		left join ways_used u using(way_id)
 		where u.way_id is null
 	),
@@ -777,7 +817,7 @@ with recursive waterway as ((
 	join tmp_points_info p 
 		on w1.end_id = p.id
 			and p.cnt_starts = 1
-	left join tmp_ways_info w2	
+	left join tmp_ways_info2 w2	
 		on w1.end_id = w2.start_id
 			and w2.way_id <> all(w1.way_ids_arr)
 			and (coalesce(nullif(w2.way_name,''), w1.way_name) = coalesce(nullif(w1.way_name, ''), w2.way_name) -- check whether name is the same or blank
@@ -788,20 +828,36 @@ with recursive waterway as ((
 select distinct on(way_id_orig) * 
 from waterway 
 order by way_id_orig, i desc;
--- 5s 
+-- 25s 
 
 
-drop table if exists water.built_waterways;
-create table water.built_waterways as
+
+drop table if exists built_waterways;
+create table built_waterways as
+select 
+	i.way_id way_id_orig,
+	array[i.way_id] way_ids_arr,
+	0 i,
+	i.way_name,
+	i.rel_id,
+	array[i.rel_role] rel_roles_arr,
+	i.length_km,
+	i.geom
+from water.tmp_ways_info i
+left join water.tmp_ways_info2 i2 using(way_id)
+where i2.way_id is null
+--
+union all 
+--
 select 
 	c.way_id_orig,
 	c.way_ids_arr,
 	c.i 												iterations,
 	max(w.way_name) 									name,
 	max(w.rel_id) filter(where w.rel_id is not null) 	rel_id,
+	array_agg(distinct w.rel_role) filter(where w.rel_role is not null) 	rel_roles_arr,
 	sum(length_km) 										length_km,
-	st_collect(w.start_pnt) 							pnts,
-	st_collect(w.geom) 									geom
+	st_linemerge(st_collect(w.geom) ,true)				geom
 from (
 	select * from tmp_built_waterways1 union all
 	select * from tmp_built_waterways2
@@ -809,31 +865,11 @@ from (
 left join tmp_ways_info w 
 	on w.way_id = any(c.way_ids_arr)
 group by c.way_id_orig,	c.way_ids_arr, c.i;
--- 40s
+-- 1m 25s
+
+create index on built_waterways using gist(geom);
 
 
 
 
 
-
-select w.* 
-from ways w
-join pnt_stat s1 on s1.id = w.start_id
-join pnt_stat s2 on s2.id = w.end_id
-where not(s1.cnt_starts = 1  
-	and s1.cnt_ends = 0
-	and s2.cnt_ends = 1
-	and s2.cnt_starts = 0)
-
-	
-select count(*) from ways;
-select * from tmp_ways_info where start_id = 118391342118544106;
-
-select way_id, count(*) from tmp_ways_info group by way_id having count(*) > 1;
-select * from tmp_ways_info where way_id = 32743516;
-
-
-select 
-	count(name) filter(where name <> '') cnt_name,
-	count(distinct name) filter(where name <> '') cnt_distinct_name
-from built_waterways;
