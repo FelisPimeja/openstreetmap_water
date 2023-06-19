@@ -645,15 +645,17 @@ create table tmp_points_info as
 with ids as (
 	select start_id id from tmp_ways_info 
 	union 
-	select end_id id   from tmp_ways_info
+	select end_id   id from tmp_ways_info
 )
 select
 	id,
-	count(w1.*) cnt_starts,
-	count(w2.*) cnt_ends
+	count(distinct s.way_id) cnt_starts,
+--	array_agg(s.way_id) start_ways_agg,
+--	array_agg(e.way_id) end_ways_agg,
+	count(distinct e.way_id) cnt_ends
 from ids i
-left join tmp_ways_info w1 on w1.start_id = id
-left join tmp_ways_info w2 on w2.end_id   = id
+left join tmp_ways_info s on s.start_id = id
+left join tmp_ways_info e on e.end_id   = id
 group by id;
 
 create index on tmp_points_info(id);
@@ -680,16 +682,15 @@ drop table if exists water.tmp_ways_info2;
 create table water.tmp_ways_info2 as 
 select w.*
 from tmp_ways_info w
-join tmp_points_info p1 
-	on w.start_id = p1.id
-join tmp_points_info p2 
-	on w.end_id   = p2.id
-where not (
-		p1.cnt_starts = 1
-	and p2.cnt_starts = 0
-	and p1.cnt_ends = 0
-	and p2.cnt_ends = 1
-);
+join tmp_points_info s 
+	on w.start_id = s.id
+join tmp_points_info e 
+	on w.end_id   = e.id
+where not (s.cnt_starts = 1
+	and  s.cnt_ends = 0
+	and  e.cnt_starts = 0
+	and  e.cnt_ends = 1
+	);
 
 create index on tmp_ways_info2(way_id);
 create index on tmp_ways_info2(rel_id);
@@ -698,7 +699,7 @@ create index on tmp_ways_info2(way_type);
 create index on tmp_ways_info2(way_name);
 create index on tmp_ways_info2(start_id);
 create index on tmp_ways_info2(end_id);
--- 10s
+-- 15s
 
 
 drop table if exists water.tmp_built_waterways1;
@@ -715,10 +716,15 @@ with recursive waterway as (
 		w.way_name,
 		w.rel_id
 	from tmp_ways_info2 w
-	join tmp_points_info s1 
-		on s1.id = w.start_id
-	where s1.cnt_ends > 1 
-		or (s1.cnt_starts > 0 and s1.cnt_ends = 0)
+	join tmp_points_info s 
+		on s.id = w.start_id
+	join tmp_points_info e 
+		on e.id = w.end_id
+	where  e.cnt_starts = 1 
+		and (s.cnt_ends > 1
+			or (s.cnt_starts > 0 and s.cnt_ends = 0)
+			or (s.cnt_starts > 1 and s.cnt_ends = 1)
+		)
 	--
 	union all
 	--
@@ -727,26 +733,27 @@ with recursive waterway as (
 		w2.way_id,
 		w1.way_id_orig,
 		w1.way_ids_arr || w2.way_id 									way_ids_arr,
-		w2.start_id,
+		w1.start_id,
 		w2.end_id,
 		coalesce(nullif(w1.way_name, ''), nullif(w2.way_name, ''), '')	way_name,
 		coalesce(w1.rel_id, w2.rel_id)									rel_id
 	from waterway w1
-	join tmp_points_info p 
-		on w1.end_id = p.id
-			and p.cnt_starts = 1
 	left join tmp_ways_info2 w2	
 		on w1.end_id = w2.start_id
 			and w2.way_id <> all(w1.way_ids_arr)
 			and (coalesce(nullif(w2.way_name,''), w1.way_name) = coalesce(nullif(w1.way_name, ''), w2.way_name) -- check whether name is the same or blank
 				or coalesce(w2.rel_id, w1.rel_id, 0) = coalesce(w1.rel_id, w2.rel_id, 0)						-- check whether relation_id is the same or null
 			)
+	join tmp_points_info s
+		on s.id = w2.start_id
+			and s.cnt_starts = 1
+			and s.cnt_ends = 1
 	where w2.way_id is not null
 )
 select distinct on(way_id_orig) * 
 from waterway 
 order by way_id_orig, i desc;
--- 5m 50s
+-- 2m 10s
 
 
 
@@ -756,8 +763,8 @@ with recursive waterway as ((
 	with ways_used as (
 		select unnest(way_ids_arr) way_id from tmp_built_waterways1
 	),
-	ways_left as (
-		select distinct 
+	ways_left as materialized(
+		select
 			w.way_id, 
 			w.start_id, 
 			w.end_id, 
@@ -768,20 +775,17 @@ with recursive waterway as ((
 		where u.way_id is null
 	),
 	ids as (
-		select start_id id
-		from ways_left 
-		union 
-		select end_id id
-		from ways_left
+		select start_id id from ways_left union 
+		select end_id   id from ways_left
 	),
-	stat as (
+	stat as materialized(
 		select id, count(w1.*) cnt_starts, count(w2.*) cnt_ends
 		from ids i
 		left join ways_left w1 on w1.start_id = id
 		left join ways_left w2 on w2.end_id   = id
 		group by id
 	)
-	select distinct
+	select
 		1 i, 
 		w.way_id,
 		w.way_id 		way_id_orig,
@@ -804,14 +808,14 @@ with recursive waterway as ((
 		w2.way_id,
 		w1.way_id_orig,
 		w1.way_ids_arr || w2.way_id 									way_ids_arr,
-		w2.start_id,
+		w1.start_id,
 		w2.end_id,
 		coalesce(nullif(w1.way_name, ''), nullif(w2.way_name, ''), '')	way_name,
 		coalesce(w1.rel_id, w2.rel_id)									rel_id
 	from waterway w1
-	join tmp_points_info p 
-		on w1.end_id = p.id
-			and p.cnt_starts = 1
+	join tmp_points_info e 
+		on w1.end_id = e.id
+			and e.cnt_starts = 1
 	left join tmp_ways_info2 w2	
 		on w1.end_id = w2.start_id
 			and w2.way_id <> all(w1.way_ids_arr)
@@ -823,11 +827,19 @@ with recursive waterway as ((
 select distinct on(way_id_orig) * 
 from waterway 
 order by way_id_orig, i desc;
--- 17s 
+-- 10s 
 
 
 drop table if exists built_waterways;
 create table built_waterways as
+--
+with used_ways as (
+	select *
+	from (
+		select unnest(way_ids_arr) way_id from tmp_built_waterways1 union all
+		select unnest(way_ids_arr) way_id from tmp_built_waterways2
+	) u
+) 
 select 
 	i.way_id way_id_orig,
 	array[i.way_id] way_ids_arr,
@@ -837,10 +849,10 @@ select
 	array[i.rel_role] rel_roles_arr,
 	i.length_km,
 	g.geom
-from tmp_ways_info i
-left join water_ways		   g  using(way_id)
-left join water.tmp_ways_info2 i2 using(way_id)
-where i2.way_id is null
+from tmp_ways_info 	 i
+left join water_ways g using(way_id)
+left join used_ways  u using(way_id)
+where u.way_id is null
 --
 union all 
 --
@@ -864,7 +876,7 @@ left join water_ways g
 group by c.way_id_orig,	c.way_ids_arr, c.i;
 
 create index on built_waterways using gist(geom);
--- 1m 20s
+-- 4m 10s
 
 
 
@@ -1066,3 +1078,33 @@ create index on built_waterways3 using gist(geom);
 select distinct st_geometrytype(geom) from water.built_waterways;
 select distinct st_geometrytype(geom) from water.tmp_ways_info;
 select * from water.built_waterways where  st_geometrytype(geom) = 'ST_MultiLineString';
+
+drop table if exists tmp_points_debug;
+create table tmp_points_debug as
+with points as (
+	select 
+		((round((st_x((st_startpoint(geom)))::numeric) * 100000) + 18000000)::text || (round((st_y((st_startpoint(geom)))::numeric) * 100000) + 18000000)::text)::int8 start_id,
+		((round((st_x((  st_endpoint(geom)))::numeric) * 100000) + 18000000)::text || (round((st_y((  st_endpoint(geom)))::numeric) * 100000) + 18000000)::text)::int8 end_id,
+		i > 0 is_i,
+		st_startpoint(geom) start_pnt,
+		st_endpoint(geom) end_pnt
+	from built_waterways
+),
+points2 as (
+	select start_id id, is_i, start_pnt geom from points union all
+	select end_id   id, is_i, end_pnt   geom from points
+)
+select *
+from points2
+left join tmp_points_info using(id);
+
+create index on tmp_points_debug (is_i);
+create index on tmp_points_debug using gist(geom);
+-- 35s
+
+
+
+----------------------------------------------------
+
+
+
