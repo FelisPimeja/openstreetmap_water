@@ -10,4 +10,5 @@
 6. Check for unusial *waterway* key values
 7. *waterway* and *highway* intersections in one level
 8. *name* change on neighbouring segments without tributaries in the middle
-9. 
+9. Fully duplicated geometry
+10. 
