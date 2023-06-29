@@ -883,202 +883,6 @@ create index on built_waterways using gist(geom);
 -------------------------
 
 
-
-drop table if exists built_waterways2;
-create table built_waterways2 as
---select 
---	i.way_id way_id_orig,
---	array[i.way_id] way_ids_arr,
---	0 i,
---	i.way_name,
---	i.rel_id,
---	array[i.rel_role] rel_roles_arr,
---	i.length_km,
---	i.geom
---from water.tmp_ways_info i
---left join water.tmp_ways_info2 i2 using(way_id)
---where i2.way_id is null
-----
---union all 
---
-select 
-	c.way_id_orig,
-	c.way_ids_arr,
-	c.i 												iterations,
-	max(w.way_name) 									name,
-	max(w.rel_id) filter(where w.rel_id is not null) 	rel_id,
-	array_agg(distinct w.rel_role) filter(where w.rel_role is not null) 	rel_roles_arr,
-	sum(length_km) 										length_km,
-	st_linemerge(st_collect(w.geom) ,true)				geom
-from (
-	select * from tmp_built_waterways1 union all
-	select * from tmp_built_waterways2
-) c
-left join tmp_ways_info w 
-	on w.way_id = any(c.way_ids_arr)
-group by c.way_id_orig,	c.way_ids_arr, c.i;
--- 30s
-
-create index on built_waterways2 using gist(geom);
-
---select distinct rel_roles_arr from water.built_waterways2; !!!!!!!!!! {main_stream,side_stream} !!!!!!!!!!!!
---select st_geometrytype(geom), count(*) from water.built_waterways2 group by 1; --!!!!!!!!!! 'ST_MultiLineString' !!!!!!!!!!!!
-select * from built_waterways where st_geometrytype(geom) = 'ST_MultiLineString'; --!!!!!!!!!! {main_stream,side_stream} !!!!!!!!!!!!
-
-
-drop table if exists tmp_ways_info3;
-create table tmp_ways_info3 as 
-select 
-	way_id_orig way_id,
-	way_ids_arr,
-	rel_id,
-	"name" way_name,
---	rel_roles_arr,
-	length_km,
-		((round((st_x((st_startpoint(geom)))::numeric) * 100000) + 18000000)::text || (round((st_y((st_startpoint(geom)))::numeric) * 100000) + 18000000)::text)::int8 start_id,
-		((round((st_x((  st_endpoint(geom)))::numeric) * 100000) + 18000000)::text || (round((st_y((  st_endpoint(geom)))::numeric) * 100000) + 18000000)::text)::int8 end_id,
-	st_startpoint(geom) start_pnt,
-	st_endpoint(geom) 	end_pnt,
-	geom	
-from built_waterways2;
--- 1m 30s
-
-create index on tmp_ways_info3(way_id);
-create index on tmp_ways_info3(rel_id);
---create index on tmp_ways_info2(rel_role);
---create index on tmp_ways_info2(way_type);
-create index on tmp_ways_info3(length_km);
-create index on tmp_ways_info3(way_name);
-create index on tmp_ways_info3(start_id);
-create index on tmp_ways_info3(end_id);
---create index on tmp_ways_info using gist(geom);
---create index on tmp_ways_info using gist(start_pnt);
---create index on tmp_ways_info using gist(end_pnt);
---15 s
-
-
-drop table if exists tmp_points_info2;
-create table tmp_points_info2 as 			
-with ids as (
-	select start_id id, start_pnt geom
-	from tmp_ways_info3 
-	union 
-	select end_id id, end_pnt geom
-	from tmp_ways_info3
-)
-select
-	id,
-	count(w1.*) cnt_starts,
-	count(w2.*) cnt_ends,
-	i.geom	
-from ids i
-left join tmp_ways_info3 w1 on w1.start_id = id
-left join tmp_ways_info3 w2 on w2.end_id   = id
-group by id, i.geom;
-
-create index on tmp_points_info2(id);
-create index on tmp_points_info2(cnt_starts, cnt_ends);
-create index on tmp_points_info2 using gist(geom);
--- 25s
-
-
-
-
-drop table if exists water.tmp_built_waterways3;
-create table water.tmp_built_waterways3 as
-with recursive waterway as (
-	select 
-		1 i, 
-		w.way_id,
-		w.way_id 		way_id_orig,
-		way_ids_arr,
-		w.start_id,
-		w.end_id,
-		w.way_name,
-		w.rel_id
-	from tmp_ways_info3 w
-	join tmp_points_info2 s1 
-		on s1.id = w.start_id
-	where s1.cnt_starts > 0 
-		and s1.cnt_ends = 0
-	--
-	union all
-	--
-	select 
-		i + 1 i, 
-		w2.way_id,
-		w1.way_id_orig,
-		w1.way_ids_arr || w2.way_id 									way_ids_arr,
-		w2.start_id,
-		w2.end_id,
-		coalesce(nullif(w1.way_name, ''), nullif(w2.way_name, ''), '')	way_name,
-		coalesce(w1.rel_id, w2.rel_id)									rel_id
-	from waterway w1
---	join tmp_points_info2 p 
---		on w1.end_id = p.id
---			and p.cnt_starts = 1
-	left join lateral (
-		select w2.* 
-		from tmp_ways_info3 w2
-		where w2.start_id = w1.end_id
-			and w2.way_id <> all(w1.way_ids_arr)
-			and (coalesce(nullif(w2.way_name,''), w1.way_name) = coalesce(nullif(w1.way_name, ''), w2.way_name) -- check whether name is the same or blank
-				or coalesce(w2.rel_id, w1.rel_id, 0) = coalesce(w1.rel_id, w2.rel_id, 0)						-- check whether relation_id is the same or null
-			)
-		order by w2.length_km desc
-		limit 1
-	) w2 on true
-	where w2.way_id is not null
-)
-select distinct on(way_id_orig) * 
-from waterway 
---where i > 1
-order by way_id_orig, i desc;
--- 10s
-
-
-
-
-drop table if exists built_waterways3;
-create table built_waterways3 as
---select 
---	i.way_id way_id_orig,
---	array[i.way_id] way_ids_arr,
---	0 i,
---	i.way_name,
---	i.rel_id,
---	array[i.rel_role] rel_roles_arr,
---	i.length_km,
---	i.geom
---from water.tmp_ways_info i
---left join water.tmp_ways_info2 i2 using(way_id)
---where i2.way_id is null
-----
---union all 
---
-select 
-	c.way_id_orig,
-	c.way_ids_arr,
-	c.i 												iterations,
-	max(w.way_name) 									name,
-	max(w.rel_id) filter(where w.rel_id is not null) 	rel_id,
---	array_agg(distinct w.rel_role) filter(where w.rel_role is not null) 	rel_roles_arr,
-	sum(length_km) 										length_km,
-	st_linemerge(st_collect(w.geom) ,true)				geom
-from tmp_built_waterways3 c
-left join tmp_ways_info3 w 
-	on w.way_id = any(c.way_ids_arr)
-group by c.way_id_orig,	c.way_ids_arr, c.i;
--- 2m
-
-create index on built_waterways3 using gist(geom);
-
-
-
-select distinct st_geometrytype(geom) from water.built_waterways;
-select distinct st_geometrytype(geom) from water.tmp_ways_info;
-select * from water.built_waterways where  st_geometrytype(geom) = 'ST_MultiLineString';
-
 drop table if exists tmp_points_debug;
 create table tmp_points_debug as
 with points as (
@@ -1105,6 +909,1024 @@ create index on tmp_points_debug using gist(geom);
 
 
 ----------------------------------------------------
+----------------------------------------------------
+----------------------------------------------------
+----------------------------------------------------
+----------------------------------------------------
+----------------------------------------------------
+----------------------------------------------------
+----------------------------------------------------
+----------------------------------------------------
+----------------------------------------------------
+----------------------------------------------------
+----------------------------------------------------
+----------------------------------------------------
+----------------------------------------------------
+----------------------------------------------------
+----------------------------------------------------
+----------------------------------------------------
+----------------------------------------------------
+----------------------------------------------------
+----------------------------------------------------
+
+
+
+
+-- Step 1
+drop table if exists tmp_ways_info_1;
+create table tmp_ways_info_1 as 
+select 
+	way_id,
+	rel_id,
+	rel_role,
+	coalesce(tags ->> 'waterway', '') 	way_type,
+	coalesce(tags ->> 'name', '') 		way_name,
+	st_length(geom::geography)::numeric / 1000 length_km,
+	((round((st_x((st_startpoint(geom)))::numeric) * 100000) + 18000000)::text || (round((st_y((st_startpoint(geom)))::numeric) * 100000) + 18000000)::text)::int8 start_point_id,
+	((round((st_x((  st_endpoint(geom)))::numeric) * 100000) + 18000000)::text || (round((st_y((  st_endpoint(geom)))::numeric) * 100000) + 18000000)::text)::int8 end_point_id
+from water_ways w
+left join tmp_rels_info r using(way_id)
+where   coalesce(tags ->> 'waterway', '') in ('river', 'canal');
+--order by geom;
+-- 1m 50s
+
+create index on tmp_ways_info_1(way_id);
+--create index on tmp_ways_info_1(rel_id);
+--create index on tmp_ways_info_1(rel_role);
+--create index on tmp_ways_info_1(way_type);
+--create index on tmp_ways_info_1(way_name);
+create index on tmp_ways_info_1(start_point_id);
+create index on tmp_ways_info_1(end_point_id);
+--50 s
+
+
+-- Step 2
+drop table if exists tmp_points_info_1;
+create table tmp_points_info_1 as 			
+with ids as (
+	select start_point_id id from tmp_ways_info_1 
+	union 
+	select end_point_id   id from tmp_ways_info_1
+)
+select
+	id,
+	count(distinct s.way_id) cnt_starts,
+--	array_agg(s.way_id) start_ways_agg,
+--	array_agg(e.way_id) end_ways_agg,
+	count(distinct e.way_id) cnt_ends
+from ids i
+left join tmp_ways_info_1 s on s.start_point_id = id
+left join tmp_ways_info_1 e on e.end_point_id   = id
+group by id;
+
+create index on tmp_points_info_1(id);
+create index on tmp_points_info_1(cnt_starts, cnt_ends);
+-- 5s
+
+
+
+-- Step 3
+drop table if exists tmp_ways_info_2 cascade;
+create table tmp_ways_info_2 as 
+select w.*,
+	s.cnt_starts 	cnt_s_starts,
+	s.cnt_ends 		cnt_s_ends,
+	e.cnt_starts 	cnt_e_starts,
+	e.cnt_ends 		cnt_e_ends
+from tmp_ways_info_1 w
+left join tmp_points_info_1 s on s.id = w.start_point_id
+left join tmp_points_info_1 e on e.id = w.end_point_id
+where not (
+	s.cnt_starts = 1
+	and s.cnt_ends = 0
+	and e.cnt_starts = 0
+	and e.cnt_ends = 1
+);
+
+--create index on tmp_ways_info_2(way_id);
+--create index on tmp_ways_info_2(rel_id);
+--create index on tmp_ways_info_2(rel_role);
+--create index on tmp_ways_info_2(way_type);
+--create index on tmp_ways_info_2(way_name);
+create index on tmp_ways_info_2(start_point_id); --!!!
+--create index on tmp_ways_info_2(start_point_id, length_km desc); --!!!
+create index on tmp_ways_info_2(end_point_id);   --!!!
+--create index on tmp_ways_info_2(end_point_id, cnt_e_ends);
+--
+--create index on tmp_ways_info_2(cnt_s_starts);
+--create index on tmp_ways_info_2(cnt_s_ends, length_km);
+--create index on tmp_ways_info_2(cnt_s_ends);
+create index on tmp_ways_info_2(cnt_s_ends, way_id, way_name, length_km, end_point_id, cnt_s_ends, cnt_e_starts, cnt_e_ends);
+--create index on tmp_ways_info_2(cnt_s_ends, length_km, way_id, way_name, end_point_id, cnt_s_ends, cnt_e_starts, cnt_e_ends);
+--create index on tmp_ways_info_2(length_km);
+--create index on tmp_ways_info_2(cnt_e_starts);
+--create index on tmp_ways_info_2(cnt_e_ends);
+-- 5s
+--vacuum analyze tmp_ways_info_2;
+
+
+--show work_mem;
+--set  work_mem to '512MB';
+
+
+
+	
+-- Step 4	
+drop table if exists built_waterways_9;
+create  table built_waterways_9 as
+--
+--explain --(analyze, costs, verbose, buffers/*, format json*/)
+with recursive waterways as ((
+	select 
+		0::int2 i,
+		0::int2 d,
+		way_id start_way_id,
+		way_id,
+		null::int8 start_way_id_w2,
+		rel_id,
+		way_name,
+		length_km,
+		end_point_id,
+		0::int2 cnt_s_ends,
+		cnt_e_starts,
+		cnt_e_ends,
+		null::bool w2_way_id_not_null,
+		null::int2 w2_cnt_s_ends, 
+		array[way_id] 	way_id_arr,
+		array[way_name] way_name_arr,
+		array[round(length_km, 1)::text] length_arr,
+		1::int2 state 			-- 0 - increment, 1 - stage, 2 - stop
+	from water.tmp_ways_info_2
+	where (cnt_s_ends = 0       -- 1. Watercourse spring
+	   or way_id in (          -- 2. Watercource with another name starts from the neighbouring segment
+            select i2.way_id
+            from tmp_ways_info_2 i1
+            join tmp_ways_info_2 i2 
+                on i1.cnt_s_ends = 1
+                    and i1.way_name <> ''
+                    and i2.way_name <> ''
+                    and i1.rel_id <> i2.rel_id
+                    and i1.way_name <> i2.way_name
+                    and i1.end_point_id = i2.start_point_id
+            left join tmp_ways_info_2 i3 
+                on i3.way_id <> i1.way_id
+                    and i1.end_point_id = i3.end_point_id
+                    and (i2.way_name = i3.way_name or i2.rel_id = i3.rel_id)
+            where i3.way_id is null
+        )
+        or way_id in (         -- 3. Side streams
+            select distinct i2.way_id
+            from tmp_ways_info_2 i1
+            join lateral (
+                select i2.*
+                from tmp_ways_info_2 i2
+                where i2.start_point_id = i1.end_point_id
+                    and i2.cnt_s_ends   > 0
+                    and i2.cnt_s_starts > 1
+                    and (i2.way_name = i1.way_name or i2.way_name = '' or coalesce(i2.rel_id, 0) = coalesce(i1.rel_id, 0))
+                order by coalesce(i2.rel_role, '') = 'main_stream' desc, i2.length_km desc
+                offset 1
+            ) i2 on true
+        )
+        )
+--      and way_id in (49023690, 645862054, 643464031, 1080226012, 1080226011, 645286195)
+--      and way_id in (488835926, 277857313, 80139755, 52014307)
+--      and way_id in (1136030753, 167622095, 189387571, 133844514, 125212490, 45493455, 56026202, 46546001, 1175254738, 1175254743, 56191081, 1175254746, 32756823, 56195804, 531440157, 531439621, 262537582)
+--	limit 40000
+	)
+	--
+	union all (
+	--
+	with w as (select * from waterways)
+	select
+--  i:
+--		(w1.i + 1)::int2 i,
+		case 
+            when w1.cnt_e_ends = 1 then 
+                case 
+                    when w1.cnt_e_starts = 0                                        then w1.i
+                    when w1.cnt_e_starts > 0 then
+                        case
+                            when c.way_id is not null                               then (w1.i + 1)::int2
+                            else                                                         w1.i
+                        end
+                    else                                                                 null::int2
+                end
+            when w1.cnt_e_ends > 1 then 
+                case 
+                    when w2.way_id is not null and w2.cnt_s_ends = 0 then 
+                        case
+                            when (w1.way_name = w2.way_name 
+                                or coalesce(w1.rel_id, 0) = coalesce(w2.rel_id, 0)
+                                ) 
+                                and w2.length_km > w1.length_km                     then w1.i
+                            else
+                                case
+                                    when c.way_id is not null                       then (w1.i + 1)::int2
+                                    else                                                 w1.i
+                                end
+                        end
+                    else                                                                 w1.i
+                end
+            else                                                                         null::int2
+        end,
+--	d:
+		(w1.d + 1)::int2,
+--	start_way_id
+        w1.start_way_id,
+--  way_id:
+        case 
+            when w1.cnt_e_ends = 1 then 
+                case 
+                    when w1.cnt_e_starts = 0                                        then coalesce(w1.way_id, -3)
+                    when w1.cnt_e_starts > 0 then
+                        case
+                            when c.way_id is not null                               then coalesce( c.way_id, -4)
+                            else                                                         w1.way_id
+                        end
+                    else                                                                 -1
+                end
+            when w1.cnt_e_ends > 1 then 
+                case 
+                    when w2.way_id is not null 
+                        and w2.cnt_s_ends = 0 then 
+                        case
+                            when (w1.way_name = w2.way_name 
+                                or coalesce(w1.rel_id, 0) = coalesce(w2.rel_id, 0)
+                                ) 
+                                and w2.length_km > w1.length_km                     then coalesce(w1.way_id, -5)
+                            else
+                                case
+                                    when c.way_id is not null                       then  c.way_id
+                                    else                                                 w1.way_id
+                                end
+                        end
+                    else                                                                 w1.way_id
+                end
+            else                                                                         -2
+        end,
+--  start_way_id_w2:
+        w2.start_way_id,
+--  rel_id:
+        case 
+            when w1.cnt_e_ends = 1 then 
+                case 
+                    when w1.cnt_e_starts = 0                                        then w1.rel_id
+                    when w1.cnt_e_starts > 0 then
+                        case
+                            when c.way_id is not null                               then  c.rel_id
+                            else                                                         w1.rel_id
+                        end
+                    else                                                                 null
+                end
+            when w1.cnt_e_ends > 1 then 
+                case 
+                    when w2.way_id is not null and w2.cnt_s_ends = 0 then 
+                        case
+                            when (w1.way_name = w2.way_name 
+                                or coalesce(w1.rel_id, 0) = coalesce(w2.rel_id, 0)
+                                ) 
+                                and w2.length_km > w1.length_km                     then w1.rel_id
+                            else
+                                case
+                                    when c.way_id is not null                       then  c.rel_id
+                                    else                                                 w1.rel_id
+                                end
+                        end
+                    else                                                                 w1.rel_id
+                end
+            else                                                                         null
+        end,
+--  way_name:
+		coalesce(w1.way_name, c.way_name),
+--	length_km:
+        case 
+            when w1.cnt_e_ends = 1 then 
+                case 
+                    when w1.cnt_e_starts = 0                                        then w1.length_km
+                    when w1.cnt_e_starts > 0 then
+                        case
+                            when c.way_id is not null                               then w1.length_km + c.length_km
+                            else                                                         w1.way_id
+                        end
+                    else                                                                 null
+                end
+            when w1.cnt_e_ends > 1 then 
+                case 
+                    when w2.way_id is not null and w2.cnt_s_ends = 0 then 
+                        case
+                            when (w1.way_name = w2.way_name 
+                                or coalesce(w1.rel_id, 0) = coalesce(w2.rel_id, 0)
+                                ) 
+                                and w2.length_km > w1.length_km                     then w1.length_km
+                            else
+                                case
+                                    when c.way_id is not null                       then w1.length_km + c.length_km
+                                    else                                                 w1.length_km
+                                end
+                        end
+                    else                                                                 w1.length_km
+                end
+            else                                                                         null
+        end,
+--  end_point_id:
+        case 
+            when w1.cnt_e_ends = 1 then 
+                case 
+                    when w1.cnt_e_starts = 0                                        then w1.end_point_id
+                    when w1.cnt_e_starts > 0 then
+                        case
+                            when c.way_id is not null                               then  c.end_point_id
+                            else                                                         w1.end_point_id
+                        end
+                    else                                                                 null
+                end
+            when w1.cnt_e_ends > 1 then 
+                case 
+                    when w2.way_id is not null and w2.cnt_s_ends = 0 then 
+                        case
+                            when (w1.way_name = w2.way_name 
+                                or coalesce(w1.rel_id, 0) = coalesce(w2.rel_id, 0)
+                                ) 
+                                and w2.length_km > w1.length_km                     then w1.end_point_id
+                            else
+                                case
+                                    when c.way_id is not null                       then c.end_point_id
+                                    else                                                 w1.end_point_id
+                                end
+                        end
+                    else                                                                 w1.end_point_id
+                end
+            else                                                                         null
+        end,
+--  cnt_s_ends:
+		w1.cnt_s_ends,
+--	cnt_e_starts:
+        case 
+            when w1.cnt_e_ends = 1 then 
+                case 
+                    when w1.cnt_e_starts = 0                                        then w1.cnt_e_starts
+                    when w1.cnt_e_starts > 0 then
+                        case
+                            when c.way_id is not null                               then  c.cnt_e_starts
+                            else                                                         w1.cnt_e_starts
+                        end
+                    else                                                                 null
+                end
+            when w1.cnt_e_ends > 1 then 
+                case 
+                    when w2.way_id is not null and w2.cnt_s_ends = 0 then 
+                        case
+                            when (w1.way_name = w2.way_name 
+                                or coalesce(w1.rel_id, 0) = coalesce(w2.rel_id, 0)
+                                ) 
+                                and w2.length_km > w1.length_km                     then w1.cnt_e_starts
+                            else
+                                case
+                                    when c.way_id is not null                       then c.cnt_e_starts
+                                    else                                                 w1.cnt_e_starts
+                                end
+                        end
+                    else                                                                 w1.cnt_e_starts
+                end
+            else                                                                         null
+        end,
+--  cnt_e_ends:
+        case 
+            when w1.cnt_e_ends = 1 then 
+                case 
+                    when w1.cnt_e_starts = 0                                        then w1.cnt_e_ends
+                    when w1.cnt_e_starts > 0 then
+                        case
+                            when c.way_id is not null                               then  c.cnt_e_ends
+                            else                                                         w1.cnt_e_ends
+                        end
+                    else                                                                 null
+                end
+            when w1.cnt_e_ends > 1 then 
+                case 
+                    when w2.way_id is not null and w2.cnt_s_ends = 0 then 
+                        case
+                            when (w1.way_name = w2.way_name 
+                                or coalesce(w1.rel_id, 0) = coalesce(w2.rel_id, 0)
+                                ) 
+                                and w2.length_km > w1.length_km                     then w1.cnt_e_ends
+                            else                                                          c.cnt_e_ends
+                        end
+                    else                                                                 w1.cnt_e_ends
+                end
+            else                                                                         null
+        end,
+--  w2_way_id is not null:
+        w2.way_id is not null,
+--  w2_cnt_s_ends:
+        w2.cnt_s_ends,
+--  way_id_arr:
+        case 
+            when w1.cnt_e_ends = 1 then 
+                case 
+                    when w1.cnt_e_starts = 0                                        then w1.way_id_arr
+                    when w1.cnt_e_starts > 0 then
+                        case
+                            when c.way_id is not null                               then w1.way_id_arr || c.way_id
+                            else                                                         w1.way_id_arr
+                        end
+                    else                                                                 null
+                end
+            when w1.cnt_e_ends > 1 then 
+                case 
+                    when w2.way_id is not null and w2.cnt_s_ends = 0 then 
+                        case
+                            when (w1.way_name = w2.way_name 
+                                or coalesce(w1.rel_id, 0) = coalesce(w2.rel_id, 0)
+                                ) 
+                                and w2.length_km > w1.length_km                     then w1.way_id_arr
+                            else
+                                case
+                                    when c.way_id is not null                       then w1.way_id_arr || c.way_id
+                                    else                                                 w1.way_id_arr
+                                end
+                        end
+                    else                                                                 w1.way_id_arr
+                end
+            else                                                                         null
+        end,
+--  way_name_arr:
+		case when w1.cnt_e_ends = 1 or ( w1.cnt_e_ends <> 1 and w2.start_way_id is not null and w1.length_km > w2.length_km) then w1.way_name_arr || c.way_name else w1.way_name_arr end,
+--	length_arr:
+		case when w1.cnt_e_ends = 1 or ( w1.cnt_e_ends <> 1 and w2.start_way_id is not null and w1.length_km > w2.length_km) then w1.length_arr || (round(w1.length_km, 1) || '/' || round(coalesce(w2.length_km, 0), 1)) else w1.length_arr end,
+--	state:
+		case 
+			when w1.cnt_e_ends = 1 then 
+    			case 
+    				when w1.cnt_e_starts = 0                                        then 2::int2
+                    when w1.cnt_e_starts > 0 then
+                        case
+                            when c.way_id is not null                               then 0::int2
+                            else                                                         2::int2
+                        end
+                    else                                                                 5::int2
+    			end
+            when w1.cnt_e_ends > 1 then 
+                case 
+    				when w2.way_id is not null and w2.cnt_s_ends = 0 then 
+    				    case
+                            when (w1.way_name = w2.way_name 
+                                or coalesce(w1.rel_id, 0) = coalesce(w2.rel_id, 0)
+                                ) 
+                                and w2.length_km > w1.length_km                     then 2::int2
+                            else
+                                case
+                                    when c.way_id is not null                       then 0::int2
+                                    else                                                 2::int2
+                                end
+        				end
+    				else                                                                 1::int2
+				end
+            else                                                                         6::int2
+		end
+	from w w1
+	left join lateral (
+		select w2.* from w w2
+		where w1.start_way_id <> w2.start_way_id
+			and w1.end_point_id = w2.end_point_id
+		order by w2.length_km desc
+		limit 1
+	) w2 on true
+	left join lateral (
+		select c.* 
+		from water.tmp_ways_info_2 c
+		where c.start_point_id = w1.end_point_id
+			and c.cnt_s_ends > 0
+			and not array[c.way_id] <@ w1.way_id_arr
+            and (c.way_name = w1.way_name or coalesce(c.rel_id, 0) = coalesce(w1.rel_id, 0))
+ 		order by c.length_km desc
+		limit 1
+	) c on true
+	where 
+		w1.state <> 2
+		and w1.d < 300
+)) --cycle start_way_id, way_id set is_cycle using waterways_array
+--select * from waterways /*where not is_cycle*/ order by start_way_id, d;
+,
+way_info as (
+	select distinct on (start_way_id) * 
+	from waterways
+	order by start_way_id, d desc
+) 
+--select * from way_info;
+select 
+	w1.i,
+	w1.start_way_id,
+    w1.way_id,
+    w1.rel_id,
+	w1.way_name,
+	w1.length_km,
+	w1.end_point_id,
+	w1.cnt_s_ends,
+	w1.cnt_e_starts,
+	w1.cnt_e_ends,
+	w2_way_id_not_null,
+    w2_cnt_s_ends,
+	w1.way_id_arr,
+	w1.way_name_arr,
+	w1.length_arr,
+	w1.state,
+	st_collect(g.geom) geom,
+	max(w1.d) max_d
+from way_info w1, unnest(way_id_arr) a
+left join water_ways g on g.way_id = a
+group by 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16;
+
+
+create index on built_waterways_9(max_d);
+create index on built_waterways_9 using gist (geom);
+
+
+
+select *
+from water.tmp_ways_info_2
+where cnt_s_ends = 0
+
+select i1.way_name, i2.way_name, i1.end_point_id, i2.start_point_id, w1.geom, w2.geom
+from tmp_ways_info_2 i1
+join tmp_ways_info_2 i2 
+    on i1.cnt_s_ends = 1
+--        and i1.way_id > i2.way_id
+        and i1.way_name <> ''
+        and i2.way_name <> ''
+        and i1.way_name <> i2.way_name
+        and i1.end_point_id = i2.start_point_id
+left join water_ways w1 on w1.way_id = i1.way_id
+left join water_ways w2 on w2.way_id = i2.way_id
+        
+select coalesce(nullif('', ''), 'null1') <> coalesce(nullif('имя', ''), 'null2') --'имя'
+
+
+select distinct i2.way_id
+from tmp_ways_info_2 i1
+join lateral (
+    select i2.*
+    from tmp_ways_info_2 i2
+    where i2.cnt_s_starts > 1
+        and i2.cnt_s_ends > 0
+        and i2.start_point_id = i1.end_point_id
+        and (i2.way_name = i1.way_name or coalesce(i2.rel_id, 0) = coalesce(i1.rel_id, 0))
+    order by i2.length_km desc
+    offset 1
+) i2 on true
+
+left join water_ways w1 on w1.way_id = i1.way_id
+left join water_ways w2 on w2.way_id = i2.way_id
+    
+    
+    
+tmp_ways_info_2 i2 
+    on i1.cnt_s_ends = 1
+--        and i1.way_id > i2.way_id
+        and i1.way_name <> ''
+        and i2.way_name <> ''
+        and i1.way_name <> i2.way_name
+        and i1.end_point_id = i2.start_point_id
+left join water_ways w1 on w1.way_id = i1.way_id
+left join water_ways w2 on w2.way_id = i2.way_id
+
+
+-- Visualize starting segments for recursive watercoarses building
+drop table if exists tmp_starts;
+create table tmp_starts as 
+with a as (
+    select 
+        w.*,
+        i.way_name,
+        i.way_type,
+        i.rel_id,
+        i.cnt_s_starts,
+        i.cnt_s_ends,
+        i.cnt_e_starts,
+        i.cnt_e_ends,
+        case 
+            when cnt_s_ends = 0 then 'spring'
+            when way_id in (          -- 2. Watercource with another name starts from the neighbouring segment
+                select i2.way_id
+                from tmp_ways_info_2 i1
+                join tmp_ways_info_2 i2 
+                    on i1.cnt_s_ends = 1
+                        and i1.way_name <> ''
+                        and i2.way_name <> ''
+                        and i1.rel_id <> i2.rel_id
+                        and i1.way_name <> i2.way_name
+                        and i1.end_point_id = i2.start_point_id
+                left join tmp_ways_info_2 i3 
+                    on i3.way_id <> i1.way_id
+                        and i1.end_point_id = i3.end_point_id
+                        and (i2.way_name = i3.way_name or i2.rel_id = i3.rel_id)
+                where i3.way_id is null
+            )   then 'name_change'
+            when way_id in (         -- 3. Side streams
+                select distinct i2.way_id
+                from tmp_ways_info_2 i1
+                join lateral (
+                    select i2.*
+                    from tmp_ways_info_2 i2
+                    where i2.start_point_id = i1.end_point_id
+                        and i2.cnt_s_ends   > 0
+                        and i2.cnt_s_starts > 1
+                        and (i2.way_name = i1.way_name or i2.way_name = '' or coalesce(i2.rel_id, 0) = coalesce(i1.rel_id, 0))
+                    order by coalesce(i2.rel_role, '') = 'main_stream' desc, i2.length_km desc
+                    offset 1
+                ) i2 on true
+            ) then 'side_stream'
+        end category
+    from water.tmp_ways_info_2 i
+    join water_ways w using(way_id)
+)
+select * from a where category is not null;
+    
+create index on tmp_starts(category);
+create index on tmp_starts using gist(geom);
+
+--      and way_id in (49023690, 645862054, 643464031, 1080226012, 1080226011, 645286195)
+--  limit 40000
+    )
+
+    
+    
+    
+        case 
+            when  w1.cnt_e_ends <> 1 and w2.start_way_id is null then 1::int2
+            when (w1.cnt_e_ends  = 1 and w1.cnt_e_starts = 0) and (w1.cnt_e_ends <> 1 and w2.start_way_id is not null and w1.length_km <= w2.length_km) then 2::int2
+            when (w1.cnt_e_ends  = 1 and w1.cnt_e_starts > 0) and (w1.cnt_e_ends <> 1 and w2.start_way_id is not null and w1.length_km >  w2.length_km) then 0::int2
+        end
+    
+    
+    
+        
+        
+        
+
+
+----------------------------------------------------
+----------------------------------------------------
+----------------------------------------------------
+----------------------------------------------------
+----------------------------------------------------
+----------------------------------------------------
+----------------------------------------------------
+----------------------------------------------------
+----------------------------------------------------
+----------------------------------------------------
+----------------------------------------------------
+----------------------------------------------------
+----------------------------------------------------
+----------------------------------------------------
+----------------------------------------------------
+----------------------------------------------------
+----------------------------------------------------
+----------------------------------------------------
+----------------------------------------------------
+----------------------------------------------------
+        
+-- PART II
+
+
+--show work_mem;
+--set  work_mem to '512MB';
+
+        
+-- Step 1
+drop table if exists tmp_ways_info_1;
+create table tmp_ways_info_1 as 
+select 
+    way_id,
+    rel_id,
+    rel_role,
+    coalesce(tags ->> 'waterway', '')   way_type,
+    coalesce(tags ->> 'name', '')       way_name,
+    st_length(geom::geography)::numeric / 1000 length_km,
+    ((round((st_x((st_startpoint(geom)))::numeric) * 100000) + 18000000)::text || (round((st_y((st_startpoint(geom)))::numeric) * 100000) + 18000000)::text)::int8 start_point_id,
+    ((round((st_x((  st_endpoint(geom)))::numeric) * 100000) + 18000000)::text || (round((st_y((  st_endpoint(geom)))::numeric) * 100000) + 18000000)::text)::int8 end_point_id
+from water_ways w
+left join tmp_rels_info r using(way_id)
+where   coalesce(tags ->> 'waterway', '') in ('river', 'canal');
+-- 1m 50s
+
+create index on tmp_ways_info_1(way_id);
+create index on tmp_ways_info_1(start_point_id);
+create index on tmp_ways_info_1(end_point_id);
+--50 s
+
+
+-- Step 2
+drop table if exists tmp_points_info_1;
+create table tmp_points_info_1 as           
+with ids as (
+    select start_point_id id from tmp_ways_info_1 
+    union 
+    select end_point_id   id from tmp_ways_info_1
+)
+select
+    id,
+    count(distinct s.way_id) cnt_starts,
+    count(distinct e.way_id) cnt_ends
+from ids i
+left join tmp_ways_info_1 s on s.start_point_id = id
+left join tmp_ways_info_1 e on e.end_point_id   = id
+group by id;
+
+create index on tmp_points_info_1(id);
+create index on tmp_points_info_1(cnt_starts, cnt_ends);
+-- 5s
+
+
+
+-- Step 3
+drop table if exists tmp_ways_info_2;
+create table tmp_ways_info_2 as 
+select w.*,
+    s.cnt_starts    cnt_s_starts,
+    s.cnt_ends      cnt_s_ends,
+    e.cnt_starts    cnt_e_starts,
+    e.cnt_ends      cnt_e_ends
+from tmp_ways_info_1 w
+left join tmp_points_info_1 s on s.id = w.start_point_id
+left join tmp_points_info_1 e on e.id = w.end_point_id
+where not (
+    s.cnt_starts = 1
+    and s.cnt_ends = 0
+    and e.cnt_starts = 0
+    and e.cnt_ends = 1
+);
+
+create index on tmp_ways_info_2(start_point_id); --!!!
+create index on tmp_ways_info_2(end_point_id);   --!!!
+-- 25s
+
+
+
+-- Step 4   
+drop table if exists built_waterways_1a;
+create  table built_waterways_1a as
+--
+with recursive segments as (
+    select 
+        0::int2 i,
+        way_id start_way_id,
+        way_id,
+        way_name,
+        rel_id,
+--        rel_role,
+        start_point_id,
+        end_point_id,
+        cnt_s_starts,
+        cnt_s_ends,
+        cnt_e_starts,
+        cnt_e_ends,
+        array[way_id]   way_id_arr,
+        length_km
+    from tmp_ways_info_2
+    where  cnt_s_ends   = 0         -- 1. Very first segment
+        or cnt_s_ends   > 1         -- 2. First segments after waterways merge
+        or cnt_s_starts > 1         -- 3. Fork teeth
+        or way_id in (              -- 4. Name different from the previous segment
+            select i1.way_id
+            from tmp_ways_info_2 i1
+            join tmp_ways_info_2 i2 
+                on i2.end_point_id = i1.start_point_id
+                    and i2.way_name <> i1.way_name
+            where i1.way_name <> ''
+        )
+    --
+    union all 
+    --
+    select
+        (s1.i + 1)::int2,
+        s1.start_way_id,
+        s2.way_id,
+        s1.way_name,
+        coalesce(s1.rel_id, s2.rel_id),
+        s1.start_point_id,
+        s2.end_point_id,
+        s1.cnt_s_starts,
+        s1.cnt_s_ends,
+        s2.cnt_e_starts,
+        s2.cnt_e_ends,
+        s1.way_id_arr || s2.way_id,
+        s1.length_km + s2.length_km
+    from segments s1 
+    left join tmp_ways_info_2 s2
+        on s2.start_point_id = s1.end_point_id
+            and (s1.way_name = coalesce(nullif(s2.way_name, ''), s1.way_name) or s1.rel_id = s2.rel_id)
+            and not array[s2.way_id] <@ s1.way_id_arr
+    where s1.cnt_e_starts = 1
+        and s1.cnt_e_ends = 1
+        and s2.way_id is not null
+),
+segments_merged as (
+    select distinct on (start_way_id) * from segments order by start_way_id, i desc
+)
+select distinct on (way_id) * from segments_merged order by way_id, i desc, length_km desc;
+
+create index on built_waterways_1a(start_point_id); --!!!
+create index on built_waterways_1a(end_point_id);   --!!!
+create index on built_waterways_1a(cnt_s_ends, way_id, way_name, length_km, end_point_id, cnt_s_ends, cnt_e_starts, cnt_e_ends);
+-- 2s
+
+
+-- Step 5  
+drop table if exists built_waterways_1b;
+create  table built_waterways_1b as
+--
+with recursive segments as (
+    select 
+        i i_orig,
+        0::int2 i,
+        start_way_id,
+        way_id,
+        way_name,
+        rel_id,
+--        rel_role,
+        start_point_id,
+        end_point_id,
+        cnt_s_starts,
+        cnt_s_ends,
+        cnt_e_starts,
+        cnt_e_ends,
+        way_id_arr,
+        length_km
+    from built_waterways_1a
+    where cnt_s_ends = 0         -- 1. Very first segment
+        or way_name <> ''
+    --
+    union all 
+    --
+    select
+        s1.i_orig,
+        (s1.i + 1)::int2,
+        s1.start_way_id,
+        s2.way_id,
+        coalesce(s1.way_name, s2.way_name),
+        coalesce(s1.rel_id, s2.rel_id),
+        s1.start_point_id,
+        s2.end_point_id,
+        s1.cnt_s_starts,
+        s1.cnt_s_ends,
+        s2.cnt_e_starts,
+        s2.cnt_e_ends,
+        s1.way_id_arr || s2.way_id_arr,
+        s1.length_km + s2.length_km
+    from segments s1 
+    left join lateral (
+        select s2.* from built_waterways_1a s2
+        where s2.start_point_id = s1.end_point_id
+            and (s1.way_name = coalesce(nullif(s2.way_name, ''), s1.way_name) or s1.rel_id = s2.rel_id)
+            and not array[s2.way_id] <@ s1.way_id_arr
+        order by s2.way_name = s1.way_name desc, s2.length_km desc
+        limit 1
+    ) s2 on true 
+    where s2.way_id is not null
+),
+segments_merged as (
+    select distinct on (way_id, end_point_id) * from segments order by way_id, end_point_id, i desc
+),
+segments_filtered as (
+    select distinct on (way_id, start_point_id) * from segments_merged order by way_id, start_point_id, i desc, length_km desc
+)
+select distinct on (way_name, start_point_id) * from segments_filtered order by way_name, start_point_id, i desc, length_km desc;
+
+
+create index on built_waterways_1b(start_point_id); --!!!
+create index on built_waterways_1b(end_point_id);   --!!!
+-- 1s
+
+
+
+-- Step 6 - Gather all watercourses together
+drop table if exists built_waterways_1c;
+create table built_waterways_1c as 
+--
+-- Find waterways from Step 4 that were not used in Step 5 by "start_way_id":
+with a as ( 
+    select a.* 
+    from built_waterways_1a a
+    left join built_waterways_1b b using(start_way_id)
+    where b.start_way_id is null
+),
+-- Double check them against Step 5 intersecting way arrays:
+b as (select start_way_id, unnest(way_id_arr) way_id from a),
+c as (select unnest(way_id_arr) way_id from built_waterways_1b),
+d as (
+    select distinct b.start_way_id
+    from b
+    left join c using(way_id)
+    where c.way_id is null
+),
+e as (
+    select a.start_way_id
+    from built_waterways_1a_geom a
+    join d using(start_way_id)
+),
+-- Find waterways that were not used in Step 4:
+f as (
+    select w1.way_id 
+    from      tmp_ways_info_1 w1 
+    left join tmp_ways_info_2 w2 using(way_id)
+    where w2.way_id is null
+),
+-- Gather it all together:
+united as (
+        select 
+            start_way_id way_id,
+            way_name,
+            rel_id,
+            way_id_arr,
+            length_km
+        from built_waterways_1b
+    union all
+        select 
+            start_way_id way_id,
+            way_name,
+            rel_id,
+            way_id_arr,
+            length_km
+        from built_waterways_1a
+        join e using(start_way_id)
+    union all 
+        select 
+            w.way_id,
+            w.way_name,
+            w.rel_id,
+            array[w.way_id] way_id_arr,
+            w.length_km
+        from tmp_ways_info_1 w
+        join f using(way_id)
+)
+-- Join geometry:
+select 
+    a.*, 
+    st_endpoint(g1.geom) end_pnt,
+    st_linemerge(st_collect(g2.geom), true) geom
+from united a
+cross join unnest(way_id_arr) u
+left join water_ways g1 on g1.way_id = way_id_arr[array_upper(way_id_arr, 1)]
+left join water_ways g2 on g2.way_id = u
+group by a.way_id, a.way_name, a.rel_id, a.way_id_arr, a.length_km, g1.geom;
+
+create index on built_waterways_1c (length_km);
+create index on built_waterways_1c using gist(geom);
+-- 50s
+
+
+
+--Step 7 - Building waterways hierarchy
+drop table if exists built_waterways_1d;
+create table built_waterways_1d as 
+--
+with recursive h1 as (
+    select w1.way_id, w2.way_id parent_way_id
+    from      built_waterways_1c w1
+    left join built_waterways_1c w2 
+        on st_intersects(w1.end_pnt, w2.geom)
+            and w1.way_id <> w2.way_id
+            and not st_equals(w1.end_pnt, w2.end_pnt)
+),
+h2 as (
+    select 
+        1::int2 way_rank, 
+        way_id, 
+        parent_way_id,
+        array[way_id] way_id_arr
+    from h1
+    where parent_way_id is null 
+    union
+    select 
+        (h2.way_rank + 1)::int2, 
+        h1.way_id, 
+        h1.parent_way_id,
+        h2.way_id_arr || h1.way_id
+    from h1
+    join h2
+        on h2.way_id = h1.parent_way_id
+) cycle way_id set is_cycle using journey_ids,
+a as (
+    select distinct on (way_id) way_id, h2.way_id_arr 
+    from h2 where not is_cycle
+    order by way_id, way_rank
+),
+b as (
+    select distinct on (b.way_id) b.way_id, cardinality(way_id_arr) - rn + 1 way_rank
+    from a, unnest(way_id_arr) with ordinality b(way_id, rn)
+    order by b.way_id, way_rank desc
+)
+select b.way_rank, parent_way_id, w.*  
+from  built_waterways_1c w
+left join b using(way_id)
+left join h2
+    on h2.way_id = w.way_id;
+
+create index on built_waterways_1d (way_rank);
+create index on built_waterways_1d using gist(geom);
+--55s
 
 
 
