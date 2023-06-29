@@ -1918,15 +1918,102 @@ b as (
     from a, unnest(way_id_arr) with ordinality b(way_id, rn)
     order by b.way_id, way_rank desc
 )
-select b.way_rank, parent_way_id, w.*  
+select distinct on (h2.way_id) b.way_rank, parent_way_id, w.*  
 from  built_waterways_1c w
 left join b using(way_id)
 left join h2
     on h2.way_id = w.way_id;
 
 create index on built_waterways_1d (way_rank);
+create index on built_waterways_1d (way_id);
 create index on built_waterways_1d using gist(geom);
 --55s
 
 
+--Step 8 - Segmentaze and rank segments of parental waterways:
+drop table if exists built_waterways_1e;
+create table built_waterways_1e as 
+--
+-- Query waterways that have at least 1 tributary
+with a as (
+    select distinct on (p.way_id, c.way_rank)
+        c.way_rank,                 -- tributary rank
+        p.way_id,                   -- parent way id
+        round(st_length(
+            st_linesubstring(
+                p.geom,
+                0,
+                st_linelocatepoint(p.geom, c.end_pnt)
+            )::geography
+        )::numeric / 1000, 2) dist, -- calc distance from parent spring point to tributary mouth point (for sorting tributaries)
+        st_linelocatepoint(p.geom, c.end_pnt) end_fract   -- save fraction from parent spring point to tributary mouth point
+    from built_waterways_1d p
+    join built_waterways_1d c
+        on c.parent_way_id = p.way_id 
+            and st_geometrytype(p.geom) = 'ST_LineString' -- !!!!!!!!!! check and prevent MultiLinestrings creation on previous steps
+    order by p.way_id, c.way_rank, dist
+),
+b as (
+    select 
+        way_id, 
+        way_rank,
+        dist,
+        end_fract,
+        coalesce(lag(way_rank) over(partition by way_id order by dist), 0) lag_rank, 
+        coalesce(lag(dist)     over(partition by way_id order by dist), 0) lag_dist
+    from a
+),
+c as (
+    select 
+        row_number() over(partition by way_id) id, 
+        way_id, way_rank, 
+        coalesce(lag(end_fract) over(partition by way_id order by dist), 0) start_fract,
+        end_fract
+    from b 
+    where  way_rank > coalesce(lag_rank, 0)
+        and   dist >= coalesce(lag_dist, 0)
+),
+d as (
+    select 
+        way_id, 
+        case when id = 1 then 1 else way_rank end way_rank, -- reset rank to 1 for the first segment
+        start_fract,
+        end_fract
+    from c where end_fract <> start_fract
+    union all (
+    -- generate data for the last waterway segment:
+    select distinct on(way_id)
+        way_id, 
+        way_rank + 1 way_rank, 
+        end_fract start_fract, 
+        1 end_fract 
+    from c order by way_id, id desc
+))
+(select 
+    p.way_id, 
+    d.way_rank,
+    p.parent_way_id,
+    p.way_name,
+    p.rel_id,
+    st_linesubstring(p.geom, d.start_fract, d.end_fract) geom
+from d 
+join built_waterways_1d p using(way_id)
+order by way_id)
+union all
+(select 
+    p.way_id, 
+    p.way_rank,
+    p.parent_way_id,
+    p.way_name,
+    p.rel_id,
+    p.geom
+from built_waterways_1d p 
+left join built_waterways_1d c
+    on c.parent_way_id = p.way_id 
+where c.way_id is null);
 
+create index on built_waterways_1d (way_rank);
+create index on built_waterways_1d (way_id);
+create index on built_waterways_1d using gist(geom);
+
+-- 3m 50s
