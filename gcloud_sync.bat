@@ -7,5 +7,4 @@ for /F "eol=# tokens=*" %%i in (%~dp0\.env) do set %%i
 call gcloud storage cp ^
     --recursive ^
     --continue-on-error ^
-    --gzip-in-flight-all ^
     %vectorTiles% gs://%bucketId%
