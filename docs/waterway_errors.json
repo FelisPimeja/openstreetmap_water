@@ -27,13 +27,9 @@
     },
     "ogr2ogr": {
       "type": "vector",
-      "tiles": [
-        "https://storage.googleapis.com/sandbox-248512.appspot.com/waterways_ogr2ogr/{z}/{x}/{y}.pbf"
-      ],
+      "url": "pmtiles://https://storage.googleapis.com/sandbox-248512.appspot.com/waterways.pmtiles",
       "minZoom": 0,
-      "maxZoom": 14,
-      "maxzoom": 9,
-      "minzoom": 0
+      "maxzoom": 9
     },
     "ne_shaded_relief": {
       "type": "raster",
