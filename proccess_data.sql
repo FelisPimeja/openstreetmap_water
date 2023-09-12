@@ -162,7 +162,7 @@ select
 from water.water_ways w 
 left join ways_in_rels r using(way_id)
 where r.way_id is null
-	and r.tags ->> 'waterway' <> 'seaway'; 	-- Skip seaway routes
+	and w.tags ->> 'waterway' <> 'seaway'; 	-- Skip seaway routes
 
 create index on water.waterways_not_in_rels ("type", length_km);
 create index on water.waterways_not_in_rels using gist(geom);
