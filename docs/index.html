@@ -22,8 +22,19 @@
     var map = new maplibregl.Map({
         container: 'map',
         style:'./waterway_errors.json',
-        zoom: 3,
-        center: [75, 60]
+        zoom: localStorage.theZoom ?? 3,
+        center: localStorage.theCenter.split(",").map(parseFloat) ?? [75, 60]
+    });
+
+    // Store Map zoom and center into LocalStorage
+    map.on('zoomend', function(e) {
+        localStorage.theZoom = map.getZoom();
+        localStorage.theCenter = map.getCenter().toArray()
+    });
+
+    map.on('moveend', function(f) {
+        localStorage.theZoom   = map.getZoom();
+        localStorage.theCenter = map.getCenter().toArray()
     });
 
     // map.showTileBoundaries = true;
