@@ -49,7 +49,7 @@
       "encoding": "terrarium"
     }
   },
-  "sprite": "https://api.maptiler.com/maps/openstreetmap/sprite",
+  "sprite": "https://felispimeja.github.io/openstreetmap_water/assets/sprite",
   "glyphs": "https://api.maptiler.com/fonts/{fontstack}/{range}.pbf?key=z9jR5pdnvvxTxnCPJt9c",
   "layers": [
     {
