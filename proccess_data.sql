@@ -94,7 +94,7 @@ drop table if exists water.wikidata_tmp1 cascade;
 ------------------------------------------
 
 -- Water areas
-drop table if exists water.water_areas;
+drop table if exists water.water_areas cascade;
 create table water.water_areas as 
 select 
 	area_id,
@@ -392,7 +392,7 @@ select
 		when length_km between    2 and    5 	then 'i'
 		when length_km < 2 						then 'j'
 	end "class",
-	st_simplify(geom, 0.075) geom 
+	st_simplify(geom, 0.05) geom 
 from water.waterways_from_rels
 where "type" in ('river', 'canal') and length_km > 100
 union all 
@@ -415,7 +415,7 @@ select
 		when length_km between    2 and    5 	then 'i'
 		when length_km < 2 						then 'j'
 	end "class",
-	st_simplify(geom, 0.075) geom 
+	st_simplify(geom, 0.05) geom 
 from water.waterways_not_in_rels
 where "type" in ('river', 'canal') and length_km > 100;
 
@@ -441,7 +441,7 @@ select
 		when length_km between    2 and    5 	then 'i'
 		when length_km < 2 						then 'j'
 	end "class",
-	st_simplify(geom, 0.05) geom 
+	st_simplify(geom, 0.025) geom 
 from water.waterways_from_rels
 where "type" in ('river', 'canal') and length_km > 50
 union all 
@@ -464,7 +464,7 @@ select
 		when length_km between    2 and    5 	then 'i'
 		when length_km < 2 						then 'j'
 	end "class",
-	st_simplify(geom, 0.05) geom 
+	st_simplify(geom, 0.025) geom 
 from water.waterways_not_in_rels
 where "type" in ('river', 'canal') and length_km > 50;
 
@@ -490,7 +490,7 @@ select
 		when length_km between    2 and    5 	then 'i'
 		when length_km < 2 						then 'j'
 	end "class",
-	st_simplify(geom, 0.025) geom 
+	st_simplify(geom, 0.01) geom 
 from water.waterways_from_rels
 where length_km > 20
 union all 
@@ -513,7 +513,7 @@ select
 		when length_km between    2 and    5 	then 'i'
 		when length_km < 2 						then 'j'
 	end "class",
-	st_simplify(geom, 0.025) geom 
+	st_simplify(geom, 0.01) geom 
 from water.waterways_not_in_rels
 where length_km > 20;
 
@@ -539,7 +539,7 @@ select
 		when length_km between    2 and    5 	then 'i'
 		when length_km < 2 						then 'j'
 	end "class",
-	st_simplify(geom, 0.01) geom 
+	st_simplify(geom, 0.005) geom 
 from water.waterways_from_rels
 where length_km > 10
 union all 
@@ -562,7 +562,7 @@ select
 		when length_km between    2 and    5 	then 'i'
 		when length_km < 2 						then 'j'
 	end "class",
-	st_simplify(geom, 0.01) geom 
+	st_simplify(geom, 0.005) geom 
 from water.waterways_not_in_rels
 where length_km > 10;
 
@@ -588,7 +588,7 @@ select
 		when length_km between    2 and    5 	then 'i'
 		when length_km < 2 						then 'j'
 	end "class",
-	st_simplify(geom, 0.005) geom 
+	st_simplify(geom, 0.002) geom 
 from water.waterways_from_rels
 where length_km > 5
 union all 
@@ -611,7 +611,7 @@ select
 		when length_km between    2 and    5 	then 'i'
 		when length_km < 2 						then 'j'
 	end "class",
-	st_simplify(geom, 0.005) geom 
+	st_simplify(geom, 0.002) geom 
 from water.waterways_not_in_rels
 where length_km > 5;
 
@@ -637,7 +637,7 @@ select
 		when length_km between    2 and    5 	then 'i'
 		when length_km < 2 						then 'j'
 	end "class",
-	st_simplify(geom, 0.0025) geom 
+	st_simplify(geom, 0.001) geom 
 from water.waterways_from_rels
 where length_km > 2
 union all 
@@ -660,7 +660,7 @@ select
 		when length_km between    2 and    5 	then 'i'
 		when length_km < 2 						then 'j'
 	end "class",
-	st_simplify(geom, 0.0025) geom 
+	st_simplify(geom, 0.001) geom 
 from water.waterways_not_in_rels
 where length_km > 2;
 
