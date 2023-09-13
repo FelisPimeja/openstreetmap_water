@@ -18,12 +18,14 @@
     // add the PMTiles plugin to the maplibregl global.
     let protocol = new pmtiles.Protocol();
             maplibregl.addProtocol("pmtiles",protocol.tile);
+    
+    var mCenter = localStorage.theCenter ?? '75,60'
 
     var map = new maplibregl.Map({
         container: 'map',
         style:'./waterway_errors.json',
         zoom: localStorage.theZoom ?? 3,
-        center: localStorage.theCenter.split(",").map(parseFloat) ?? [75, 60]
+        center: mCenter.split(",").map(parseFloat)
     });
 
     // Store Map zoom and center into LocalStorage
