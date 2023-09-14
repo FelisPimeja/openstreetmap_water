@@ -23,7 +23,7 @@
 
     var map = new maplibregl.Map({
         container: 'map',
-        style:'./waterway_errors.json',
+        style:'./waterway_basemap.json',
         zoom: localStorage.theZoom ?? 3,
         center: mCenter.split(",").map(parseFloat)
     });
