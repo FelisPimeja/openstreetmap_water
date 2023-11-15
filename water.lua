@@ -3,26 +3,68 @@ local loc_schema = 'water'
 local tables = {}
 
 
-tables.coast_lines = osm2pgsql.define_way_table('coast_lines', {
-    { column = 'tags', type = 'jsonb' },
-    { column = 'geom', type = 'linestring', projection = srid, not_null = true },
-}, { schema = loc_schema })
 
-tables.water_ways = osm2pgsql.define_way_table('water_ways', {
-    { column = 'tags', type = 'jsonb' },
-    { column = 'geom', type = 'linestring', projection = srid, not_null = true },
-}, { schema = loc_schema })
+tables.nodes = osm2pgsql.define_table({
+    name = 'nodes', 
+    schema = loc_schema,
+    ids = { type = 'node', id_column = 'osm_id' },
+    columns = {
+        { column = 'tags', type = 'jsonb' },
+        { column = 'geom', type = 'point', projection = srid, not_null = true },
+    }, 
+    indexes = {
+        { column = 'tags', method = 'btree' },
+        { column = 'geom', method = 'gist' },
+    }
+})
+
+tables.ways = osm2pgsql.define_table({
+    name = 'ways', 
+    schema = loc_schema,
+    ids = { type = 'way', id_column = 'osm_id' },
+    columns = {
+        { column = 'tags', type = 'jsonb' },
+        { column = 'nodes', sql_type = 'int8[]' },
+        { column = 'geom', type = 'linestring', projection = srid, not_null = true },
+    }, 
+    indexes = {
+        { column = 'tags', method = 'btree' },
+        { column = 'nodes', method = 'gin' },
+        { column = 'geom', method = 'gist' },
+    }
+})
+
+tables.areas = osm2pgsql.define_table({
+    name = 'areas', 
+    schema = loc_schema,
+    ids = { type = 'area', id_column = 'osm_id' },
+    columns = {
+        { column = 'tags', type = 'jsonb' },
+        { column = 'nodes', sql_type = 'int8[]' },
+        { column = 'geom', type = 'geometry', projection = srid, not_null = true },
+    }, 
+    indexes = {
+        { column = 'tags', method = 'btree' },
+        { column = 'nodes', method = 'gin' },
+        { column = 'geom', method = 'gist' },
+    }
+})
+
+tables.relations = osm2pgsql.define_table({
+    name = 'relations', 
+    schema = loc_schema,
+    ids = { type = 'relation', id_column = 'osm_id' },
+    columns = {
+        { column = 'tags', type = 'jsonb' },
+        { column = 'members', type = 'jsonb' },
+    }, 
+    indexes = {
+        { column = 'tags', method = 'btree' },
+        { column = 'members', method = 'btree' },
+    }
+})
 
 
-tables.water_polygons = osm2pgsql.define_area_table('water_polygons', {
-    { column = 'tags', type = 'jsonb' },
-    { column = 'geom', type = 'geometry', projection = srid, not_null = true },
-}, { schema = loc_schema })
-
-tables.water_relations = osm2pgsql.define_relation_table('water_relations', {
-    { column = 'tags', type = 'jsonb' },
-    { column = 'members', type = 'jsonb' },
-}, { schema = loc_schema })
 
 -- These tag keys are generally regarded as useless for most rendering. Most
 -- of them are from imports or intended as internal information for mappers.
@@ -169,6 +211,7 @@ local delete_keys = {
 -- to clean those tags out of a Lua table. The clean_tags function will
 -- return true if it removed all tags from the table.
 local clean_tags = osm2pgsql.make_clean_tags_func(delete_keys)
+local w2r = {}
 
 function has_water_tags(tags)
     if tags.natural == 'water' or tags.natural == 'wetland' or tags.landuse == 'reservoir' then
@@ -185,60 +228,102 @@ function has_water_tags(tags)
         or tags.wetland
 end
 
-function osm2pgsql.process_way(object)
-    local tag_natural = object.tags.natural
-    local tag_waterway = object.tags.waterway
+function osm2pgsql.process_node(object)
+    local natural = object.tags.natural
+    local waterway = object.tags.waterway
 
     if clean_tags(object.tags) then
         return
     end
 
-    if tag_natural == 'coastline' then
-        tables.coast_lines:insert({
+    if natural == 'water' or natural == 'spring' or natural == 'hot_spring' or natural == 'geyser' or waterway then
+        tables.nodes:insert({
             tags = object.tags,
-            geom = object:as_linestring()
+            geom = object:as_point()
         })
+    end
+end
+
+function osm2pgsql.process_way(object)
+
+    if clean_tags(object.tags) then
+        return
     end
 
     if has_water_tags(object.tags) then
         if object.is_closed then
-            tables.water_polygons:insert({
+            tables.areas:insert({
                 tags = object.tags,
+                nodes = '{' .. table.concat(object.nodes, ',') .. '}',
                 geom = object:as_multipolygon()
             })
         else
-            if tag_waterway ~= 'dam' then
-                tables.water_ways:insert({
-                    tags = object.tags,
-                    geom = object:as_linestring()
-                })
-            end
+            tables.ways:insert({
+                tags = object.tags,
+                nodes = '{' .. table.concat(object.nodes, ',') .. '}',
+                geom = object:as_linestring()
+            })
         end
     end
     
 end
 
 function osm2pgsql.process_relation(object)
-    local relation_type = object:grab_tag('type')
-    local tag_natural = object.tags.natural
-    local tag_landuse = object.tags.landuse
-    local tag_waterway = object.tags.waterway
+    local type = object.tags.type
+    local natural = object.tags.natural
+    local landuse = object.tags.landuse
+    local waterway = object.tags.waterway
+    local members = object.members
 
     if clean_tags(object.tags) then
         return
     end
 
-    if relation_type == 'waterway' and tag_waterway ~= 'fairway' then
-        tables.water_relations:insert({
+    if type == 'waterway' then
+        tables.relations:insert({
             tags = object.tags,
             members = object.members
         })
     end
 
-    if relation_type == 'multipolygon' and (tag_natural == 'water' or tag_natural == 'wetland' or tag_landuse == 'reservoir') then
-        tables.water_polygons:insert({
+    if type == 'multipolygon' and (natural == 'water' or natural == 'wetland' or landuse == 'reservoir') then
+
+
+        -- If there is any data from parent relations, add it in
+        -- local d = w2r[object.id]
+        -- if d then
+        --     local refs = {}
+        --     local ids = {}
+        --     for rel_id, rel_ref in pairs(d) do
+        --         refs[#refs + 1] = rel_ref
+        --         ids[#ids + 1] = rel_id
+        --     end
+        --     table.sort(refs)
+        --     table.sort(ids)
+        --     row.rel_refs = table.concat(refs, ',')
+        --     row.rel_ids = '{' .. table.concat(ids, ',') .. '}'
+        -- end
+
+        -- for _, member in ipairs(object.members) do
+        --     if member.type == 'w' then
+        --         if not w2r[member.ref] then
+        --             w2r[member.ref] = {}
+        --         end
+        --         w2r[member.ref][object.id] = object.tags.ref
+        --     end
+        -- end
+
+        -- for member in pairs(object.members) do
+        --     if member.type == 'w' then
+        --         nod_list = '{' .. table.concat(member.nodes, ',') .. '}'
+        --     end
+        -- end
+
+        tables.areas:insert({
             tags = object.tags,
+            -- nodes = nod_list,
             geom = object:as_multipolygon()
         })
     end
+
 end
