@@ -7,7 +7,7 @@
 
 --alter role postgres set search_path = water, public;
 --show work_mem;
---set  work_mem to '512MB';
+--set  work_mem to '512MB';flююю
 
 
 create index if not exists water_ways_waterway on water_ways((tags ->> 'waterway'));
@@ -1032,4 +1032,33 @@ create index on water.waterways_from_rels2 using gist(mouth);
 
 
 
+-- Intersecting waterways and water areas without common intersection points:
+with intersections as (
 
+select wa.*, ww.*
+--    ww.way_id,
+--    wa.area_id
+from water.water_ways ww
+join water.water_areas wa 
+    on st_intersects(ww.geom, wa.geom)
+        and wa.type <> 'wetland'
+left join water.planet_osm_ways lw 
+    on lw.id = ww.way_id
+left join water.planet_osm_ways aw 
+    on aw.id = wa.area_id
+where not lw.nodes && aw.nodes
+
+)
+select * from intersections;
+
+
+SELECT rolpassword FROM pg_authid
+WHERE rolname = 'postgres';
+
+
+select wa.*, ww.*
+from public.ways ww
+join public.polygons wa 
+    on st_intersects(ww.geom, wa.geom)
+        and wa.tags ->> 'natural' <> 'wetland'
+where not ww.nodes && wa.nodes
