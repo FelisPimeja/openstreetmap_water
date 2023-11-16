@@ -1056,9 +1056,28 @@ SELECT rolpassword FROM pg_authid
 WHERE rolname = 'postgres';
 
 
-select wa.*, ww.*
-from public.ways ww
-join public.polygons wa 
+-- Intersecting waterways and water areas without common intersection points:
+-- todo: Добавить проверку и отбрасывать пересечения с внутренними поперечными линиями рек
+drop table if exists water.err_intersect_area_way_no_point;
+create table water.err_intersect_area_way_no_point as 
+select 
+    ww.osm_id way_id,
+    wa.osm_id area_id,
+--    wa.geom, ww.geom,
+--    st_intersection(st_boundary(wa.geom), ww.geom) geom1,
+    st_startpoint(st_intersection(st_boundary(wa.geom), ww.geom)) geom
+from water.ways ww
+join water.areas wa 
     on st_intersects(ww.geom, wa.geom)
         and wa.tags ->> 'natural' <> 'wetland'
-where not ww.nodes && wa.nodes
+where 
+    ww.tags ->> 'waterway' not in ('weir', 'dam')   -- отбрасываем дамбы
+    and not ww.nodes && wa.nodes
+    and not st_within(ww.geom, wa.geom);            -- отбрасываем линии которые полностью внутри площадного водоёма и заведомо не должны иметь точек пересечения
+
+create index on water.err_intersect_area_way_no_point using gist(geom);
+-- ~95s
+
+select count(*) from water.areas where tags ->> 'natural' <> 'wetland';
+select count(*) from water.ways;
+
