@@ -3,11 +3,11 @@ SELECT DISTINCT
   ?waterway ?labelRU ?labelEN ?sourceCoords ?mouthCoords ?mouthQid ?length ?gvr ?osm_id #?tributary
   (GROUP_CONCAT(DISTINCT ?tributaryQid; SEPARATOR="; ") AS ?tributaries)  # Aggregate tributary identifiers into list with ; delimiter
 WHERE {
-  ?waterway wdt:P31/wdt:P279+ wd:Q47521;  
-            wdt:P17 wd:Q159;     # located in Russia
+  ?waterway wdt:P31/wdt:P279+ wd:Q355304;  # subclass of watercourse 
+            wdt:P17 wd:Q159;               # located in Russia
 
-  OPTIONAL { ?waterway rdfs:label ?labelEN FILTER (lang(?labelEN) = "en") . } # Waterway name in English
-  OPTIONAL { ?waterway rdfs:label ?labelRU FILTER (lang(?labelRU) = "ru") . } # Waterway name in Russian
+  OPTIONAL { ?waterway rdfs:label ?labelEN FILTER (lang(?labelEN) = "en") . } # name in English
+  OPTIONAL { ?waterway rdfs:label ?labelRU FILTER (lang(?labelRU) = "ru") . } # name in Russian
   OPTIONAL { ?waterway p:P625 [ ps:P625 ?sourceCoords ; pq:P518 wd:Q7376362 ] . } # Source coordinates
   OPTIONAL { ?waterway p:P625 [ ps:P625 ?mouthCoords  ; pq:P518 wd:Q1233637 ] . } # Mouth coordinates         
   OPTIONAL { ?waterway wdt:P403 ?mouthWatercourse. }
