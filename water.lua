@@ -4,10 +4,10 @@ local tables = {}
 
 
 
-tables.nodes = osm2pgsql.define_table({
-    name = 'nodes', 
+tables.points = osm2pgsql.define_table({
+    name = 'osm_points', 
     schema = loc_schema,
-    ids = { type = 'node', id_column = 'osm_id' },
+    ids = { type = 'node', id_column = 'pnt_osm_id' },
     columns = {
         { column = 'tags', type = 'jsonb' },
         { column = 'geom', type = 'point', projection = srid, not_null = true },
@@ -19,9 +19,9 @@ tables.nodes = osm2pgsql.define_table({
 })
 
 tables.ways = osm2pgsql.define_table({
-    name = 'ways', 
+    name = 'osm_ways', 
     schema = loc_schema,
-    ids = { type = 'way', id_column = 'osm_id' },
+    ids = { type = 'way', id_column = 'way_osm_id' },
     columns = {
         { column = 'tags', type = 'jsonb' },
         { column = 'nodes', sql_type = 'int8[]' },
@@ -29,31 +29,32 @@ tables.ways = osm2pgsql.define_table({
     }, 
     indexes = {
         { column = 'tags', method = 'btree' },
-        { column = 'nodes', method = 'gin' },
         { column = 'geom', method = 'gist' },
+        { expression = '(nodes[1])', method = 'btree' },
+        { expression = '(nodes[cardinality(nodes)])', method = 'btree' },
     }
 })
 
 tables.areas = osm2pgsql.define_table({
-    name = 'areas', 
+    name = 'osm_areas', 
     schema = loc_schema,
-    ids = { type = 'area', id_column = 'osm_id' },
+    ids = { type = 'area', id_column = 'way_osm_id' },
     columns = {
         { column = 'tags', type = 'jsonb' },
         { column = 'nodes', sql_type = 'int8[]' },
         { column = 'geom', type = 'geometry', projection = srid, not_null = true },
     }, 
     indexes = {
+        { column = 'way_osm_id', method = 'btree' },
         { column = 'tags', method = 'btree' },
-        { column = 'nodes', method = 'gin' },
         { column = 'geom', method = 'gist' },
     }
 })
 
 tables.relations = osm2pgsql.define_table({
-    name = 'relations', 
+    name = 'osm_relations', 
     schema = loc_schema,
-    ids = { type = 'relation', id_column = 'osm_id' },
+    ids = { type = 'relation', id_column = 'rel_osm_id' },
     columns = {
         { column = 'tags', type = 'jsonb' },
         { column = 'members', type = 'jsonb' },
@@ -214,7 +215,10 @@ local clean_tags = osm2pgsql.make_clean_tags_func(delete_keys)
 local w2r = {}
 
 function has_water_tags(tags)
-    if tags.natural == 'water' or tags.natural == 'wetland' or tags.landuse == 'reservoir' then
+    if tags.natural == 'water' 
+        or tags.natural == 'wetland' 
+        or tags.natural == 'coastline' 
+        or tags.landuse == 'reservoir' then
         return true
     end
 
@@ -226,6 +230,7 @@ function has_water_tags(tags)
         or tags.harbour
         or tags.water
         or tags.wetland
+        or tags.natural
 end
 
 function osm2pgsql.process_node(object)
@@ -237,7 +242,7 @@ function osm2pgsql.process_node(object)
     end
 
     if natural == 'water' or natural == 'spring' or natural == 'hot_spring' or natural == 'geyser' or waterway then
-        tables.nodes:insert({
+        tables.points:insert({
             tags = object.tags,
             geom = object:as_point()
         })
@@ -314,9 +319,9 @@ function osm2pgsql.process_relation(object)
         -- end
 
         -- for member in pairs(object.members) do
-        --     if member.type == 'w' then
-        --         nod_list = '{' .. table.concat(member.nodes, ',') .. '}'
-        --     end
+            --     if member.type == 'w' then
+                --         nod_list = '{' .. table.concat(member.nodes, ',') .. '}'
+            --     end
         -- end
 
         tables.areas:insert({
