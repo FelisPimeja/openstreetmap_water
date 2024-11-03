@@ -1,0 +1,3 @@
+. .env
+
+osm2pgsql -c -d $pgdb -U $pguser -O flex -S ./water.lua  $osmData
