@@ -12,4 +12,4 @@
 8. *name* change on neighbouring segments without tributaries in the middle
 9. Fully duplicated geometry
 10. Status parts in *name* tag (река, р., ручей, руч., etc.)
-11. 
+11. Chech wikipedia and wikidata tags on relation and it's members

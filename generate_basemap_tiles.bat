@@ -14,8 +14,7 @@ ogr2ogr -f pmtiles ^
     -dsco type=overlay ^
     -dsco minzoom=0 ^
     -dsco maxzoom=9 ^
-    -dsco extent=8192 ^
-    -dsco max_size=1000000 ^
+    -dsco extent=4096 ^
     %vectorTiles% ^
     PG:"host=%pghost% port=%pgport% dbname=%pgdb% user=%pguser% password=%pgpassword% active_schema=water" ^
-    lin_0 lin_1 lin_2 lin_3 lin_4 lin_5 lin_6 lin_7 lin_8 lin_9
+    pnt_0 pnt_1 pnt_2 pnt_3 pnt_4 pnt_5 pnt_6 lin_6 lin_7 lin_8 lin_9 pol_7 pol_8 pol_9
