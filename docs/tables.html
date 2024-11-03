@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>OpenStreetMap waterways validator</title>
+<link href="./assets/tables.css" rel="stylesheet" />
+
+<select name="dropdown" id="dropdown">
+    <option disabled selected>Select error type from drop down list:</option>
+    <option value="err_duplicated_ways">Duplicated water ways</option>
+    <option value="err_duplicated_areas">Duplicated water areas</option>
+    <option value="err_overlapping_ways">Overlapping water ways</option>
+    <option value="err_possible_wrong_dir">Water ways with possibly wrong direction</option>
+</select>
+
+<!-- <div class="form-group">
+    <select class  ="form-control" name="state" id="maxRows">
+        <option value="5000">Show ALL Rows</option>
+        <option value="5">5</option>
+        <option value="10">10</option>
+        <option value="15">15</option>
+        <option value="20">20</option>
+        <option value="50">50</option>
+        <option value="70">70</option>
+        <option value="100">100</option>
+    </select>
+</div> -->
+
+<section>
+    <table class="table" id="table">
+        <thead>
+        <tr>
+            <th>OSM id</th>
+            <th>edit with JOSM</th>
+        </tr>
+        </thead>
+    </table>
+    <table>
+        <tbody id="data"></tbody>
+    </table>
+</section>
+
+<!--    Start Pagination -->
+<!-- <a href="javascript:prevPage()" id="btn_prev">Prev</a>
+<a href="javascript:nextPage()" id="btn_next">Next</a>
+page: <span id="page"></span> -->
+
+<script src="./assets/tables.js"></script>
+
+<iframe name="loader" style="width:0; height:0; border:0;"></iframe>
+
+</body>
+</html>
