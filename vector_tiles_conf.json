@@ -1,37 +1,43 @@
 {
-    "lin_0": {
-        "target_name": "water_lines",
-        "description": "Linear watercourses",
+    "pnt_0": {
+        "target_name": "err_points",
+        "description": "Invalid objects centroids",
         "minzoom": 0,
         "maxzoom": 0
     },
-    "lin_1": {
-        "target_name": "water_lines",
+    "pnt_1": {
+        "target_name": "err_points",
         "minzoom": 1,
         "maxzoom": 1
     },
-    "lin_2": {
-        "target_name": "water_lines",
+    "pnt_2": {
+        "target_name": "err_points",
         "minzoom": 2,
         "maxzoom": 2
     },
-    "lin_3": {
-        "target_name": "water_lines",
+    "pnt_3": {
+        "target_name": "err_points",
         "minzoom": 3,
         "maxzoom": 3
     },
-    "lin_4": {
-        "target_name": "water_lines",
+    "pnt_4": {
+        "target_name": "err_points",
         "minzoom": 4,
         "maxzoom": 4
     },
-    "lin_5": {
-        "target_name": "water_lines",
+    "pnt_5": {
+        "target_name": "err_points",
         "minzoom": 5,
         "maxzoom": 5
     },
+    "pnt_6": {
+        "target_name": "err_points",
+        "minzoom": 6,
+        "maxzoom": 6
+    },
     "lin_6": {
         "target_name": "water_lines",
+        "description": "Linear watercourses",
         "minzoom": 6,
         "maxzoom": 6
     },
@@ -50,44 +56,9 @@
         "minzoom": 9,
         "maxzoom": 9
     },
-    "pol_0": {
-        "target_name": "water_areas",
-        "description": "Polygonal watercourses",
-        "minzoom": 0,
-        "maxzoom": 0
-    },
-    "pol_1": {
-        "target_name": "water_areas",
-        "minzoom": 1,
-        "maxzoom": 1
-    },
-    "pol_2": {
-        "target_name": "water_areas",
-        "minzoom": 2,
-        "maxzoom": 2
-    },
-    "pol_3": {
-        "target_name": "water_areas",
-        "minzoom": 3,
-        "maxzoom": 3
-    },
-    "pol_4": {
-        "target_name": "water_areas",
-        "minzoom": 4,
-        "maxzoom": 4
-    },
-    "pol_5": {
-        "target_name": "water_areas",
-        "minzoom": 5,
-        "maxzoom": 5
-    },
-    "pol_6": {
-        "target_name": "water_areas",
-        "minzoom": 6,
-        "maxzoom": 6
-    },
     "pol_7": {
         "target_name": "water_areas",
+        "description": "Polygonal watercourses",
         "minzoom": 7,
         "maxzoom": 7
     },
