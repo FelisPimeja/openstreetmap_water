@@ -1,0 +1,2 @@
+. .env
+psql -U $pguser -d $pgdb -a -f proccess_data.sql

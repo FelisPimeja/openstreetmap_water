@@ -1,0 +1,8 @@
+# Download WikiData Query results as CSV file
+. .env
+
+curl --output "${wikidir}/wikidata.csv" \
+     --request POST https://query.wikidata.org/sparql \
+     --header "Accept: text/csv" \
+     --data-urlencode query@wikidata_watercources.rq \
+     --retry-all-errors

@@ -1,0 +1,5 @@
+./download_wikidata
+./import_wikidata
+./download_osm
+./import_osm
+./proccess_data
