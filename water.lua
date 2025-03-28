@@ -13,7 +13,7 @@ tables.points = osm2pgsql.define_table({
         { column = 'geom', type = 'point', projection = srid, not_null = true },
     }, 
     indexes = {
-        { column = 'tags', method = 'btree' },
+        { column = 'tags', method = 'gin' },
         { column = 'geom', method = 'gist' },
     }
 })
@@ -28,7 +28,7 @@ tables.ways = osm2pgsql.define_table({
         { column = 'geom', type = 'linestring', projection = srid, not_null = true },
     }, 
     indexes = {
-        { column = 'tags', method = 'btree' },
+        { column = 'tags', method = 'gin' },
         { column = 'geom', method = 'gist' },
         { expression = '(nodes[1])', method = 'btree' },
         { expression = '(nodes[cardinality(nodes)])', method = 'btree' },
@@ -46,7 +46,7 @@ tables.areas = osm2pgsql.define_table({
     }, 
     indexes = {
         { column = 'way_osm_id', method = 'btree' },
-        { column = 'tags', method = 'btree' },
+        { column = 'tags', method = 'gin' },
         { column = 'geom', method = 'gist' },
     }
 })
@@ -60,7 +60,7 @@ tables.relations = osm2pgsql.define_table({
         { column = 'members', type = 'jsonb' },
     }, 
     indexes = {
-        { column = 'tags', method = 'btree' },
+        { column = 'tags', method = 'gin' },
         { column = 'members', method = 'btree' },
     }
 })
