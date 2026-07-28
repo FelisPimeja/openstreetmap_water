@@ -678,6 +678,44 @@ with errors as (
         end err_id
     from :schema.osm_areas
     where   tags ->> 'name' ~ '(\yр\.|\yруч\.|\кан\.\y|\yпрот\.|\yовр\.|\yпор\.|\yрод\.|\yсух\.|\yб\.|\yбол\.|\yбр\.|\yвдп\.|\yвдхр\.|\yбол\.|\yоз\.|\yпр\.)'
+    ---------
+    union all
+    ---------
+    -- 'waterway' = 'wadi' — deprecated тег (OSM wiki), независимо от геометрии
+    select way_osm_id, '6-51' err_id
+    from :schema.osm_ways
+    where tags ->> 'waterway' = 'wadi'
+    ---------
+    union all
+    ---------
+    select way_osm_id, '6-51' err_id
+    from :schema.osm_areas
+    where tags ->> 'waterway' = 'wadi'
+    ---------
+    union all
+    ---------
+    -- 'waterway' = 'waterfall' на линии — по конвенции OSM это node
+    select way_osm_id, '6-52' err_id
+    from :schema.osm_ways
+    where tags ->> 'waterway' = 'waterfall'
+    ---------
+    union all
+    ---------
+    -- 'waterway' = 'oxbow' на линии — см. 6-23 (тот же теговый вопрос, площадной случай)
+    select way_osm_id, '6-53' err_id
+    from :schema.osm_ways
+    where tags ->> 'waterway' = 'oxbow'
+    ---------
+    union all
+    ---------
+    -- 'natural' = 'water'/'wetland' на линейном объекте — эти теги только для площадных объектов
+    select way_osm_id,
+        case
+            when tags ->> 'natural' = 'water'   then '6-54'
+            when tags ->> 'natural' = 'wetland'  then '6-55'
+        end err_id
+    from :schema.osm_ways
+    where tags ->> 'natural' in ('water', 'wetland')
     -----------
     --union all
     -----------
@@ -761,7 +799,12 @@ from (
         ('6-47',    'Нужно убрать статусную часть из названия'),
         ('6-48',    'В ключе name статусная часть вместо названия'),
         -- Гидроформанты:
-        ('6-50',    'Судя по названию, это может быть ''waterway'' = ''river''')
+        ('6-50',    'Судя по названию, это может быть ''waterway'' = ''river'''),
+        ('6-51',    '''waterway'' = ''wadi'' — устаревший тег (deprecated в OSM wiki). Замените на ''waterway'' = ''river''/''stream'' + ''intermittent'' = ''yes'', либо ''natural'' = ''valley'' — по месту'),
+        ('6-52',    '''waterway'' = ''waterfall'' на линии — по конвенции OSM это точка (node)'),
+        ('6-53',    '''waterway'' = ''oxbow'' на линии — рекомендуется ''natural'' = ''water'' + ''water'' = ''oxbow'' на полигоне (см. также 6-23)'),
+        ('6-54',    '''natural'' = ''water'' на линейном объекте — этот тег для площадных объектов, нужен контур'),
+        ('6-55',    '''natural'' = ''wetland'' на линейном объекте — этот тег для площадных объектов, нужен контур')
 ) errs(err_id, description);
 
 
