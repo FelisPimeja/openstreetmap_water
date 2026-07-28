@@ -8,4 +8,5 @@ set -a
 . "$ROOT_DIR/.env"
 set +a
 
-osm2pgsql -c -d "$PGDB" -U "$PGUSER" -H "$PGHOST" -P "$PGPORT" -O flex -S "$ROOT_DIR/water.lua" "$OSMDATA"
+osm2pgsql -c -d "$PGDB" -U "$PGUSER" -H "$PGHOST" -P "$PGPORT" -O flex -S "$ROOT_DIR/water.lua" \
+    --cache="${OSM_CACHE_MB:-800}" "$OSMDATA"

@@ -24,6 +24,11 @@ PGCLIENTENCODING=CLIENT_ENCODING_WINDOWS_ONLY
 # Target schema for all water.* tables (defaults to "water" if unset)
 WATER_SCHEMA=water
 
+# osm2pgsql node cache, MB (defaults to osm2pgsql's own default, 800, if unset).
+# 800 is fine for a region; raise it for a country-scale import (e.g. all of Russia) —
+# see osm2pgsql docs on --cache / --flat-nodes for import at that scale.
+OSM_CACHE_MB=800
+
 # WIKIDATA PATH
 WIKIDIR=PATH_TO_STORE_WIKIDATA
 
