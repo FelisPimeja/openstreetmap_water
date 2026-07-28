@@ -455,30 +455,41 @@ create index on :schema.err_possible_missing_segments2 using gist(geom);
 
 
 
-drop table if exists :schema.err_types; 
-create table :schema.err_types as 
-with ways as (
-    select ww.way_osm_id, ww.tags, ww.geom, pnt_osm_id, ww.nodes
-    from :schema.graph_nodes_stat_agg sa
-    join :schema.graph_nodes_stat ns using(pnt_osm_id)
-    join :schema.osm_ways ww using(way_osm_id)
-    where   sa."end" > 0
-        and (sa.mid > 0 or sa.str > 0)
---        and (ww.nodes[cardinality(nodes)] = pnt_osm_id)
-),
-exceptions as (
+drop table if exists :schema.err_types;
+
+-- Materialized on purpose, not a CTE: this table gets self-joined twice below
+-- (directly, and again inside `exceptions`) on pnt_osm_id. As an inline CTE, Postgres
+-- has no stats/index for that self-join and picked an unindexed nested loop — 266s on
+-- the Moscow pilot alone (99% of the whole proccess_data.sql run) vs 0.1s once indexed
+-- and ANALYZEd as a real table. Verified identical output (116/116 rows, 0 mismatched)
+-- before switching. Dropped again once err_types is built — only needed here.
+drop table if exists :schema.tmp_err_types_ways;
+create table :schema.tmp_err_types_ways as
+select ww.way_osm_id, ww.tags, ww.geom, pnt_osm_id, ww.nodes
+from :schema.graph_nodes_stat_agg sa
+join :schema.graph_nodes_stat ns using(pnt_osm_id)
+join :schema.osm_ways ww using(way_osm_id)
+where   sa."end" > 0
+    and (sa.mid > 0 or sa.str > 0);
+
+create index on :schema.tmp_err_types_ways(pnt_osm_id);
+create index on :schema.tmp_err_types_ways(way_osm_id);
+analyze :schema.tmp_err_types_ways;
+
+create table :schema.err_types as
+with exceptions as (
     select wi.way_osm_id
-    from ways wi 
-    join ways wo using(pnt_osm_id)
+    from :schema.tmp_err_types_ways wi
+    join :schema.tmp_err_types_ways wo using(pnt_osm_id)
     where   wi.nodes[cardinality(wi.nodes)] =  wi.pnt_osm_id
         and wo.nodes[cardinality(wo.nodes)] <> wo.pnt_osm_id
         and wi.tags ->> 'waterway' in ('river', 'canal')
         and wo.tags ->> 'waterway' in ('river', 'canal')
 )
 select wo.way_osm_id, wo.tags, wo.geom, st_endpoint(wi.geom) in_pnt
-from ways               wi 
-join ways               wo using(pnt_osm_id)
-left join exceptions    ex 
+from :schema.tmp_err_types_ways wi
+join :schema.tmp_err_types_ways wo using(pnt_osm_id)
+left join exceptions    ex
     on ex.way_osm_id = wi.way_osm_id
 where   wi.nodes[cardinality(wi.nodes)] =  wi.pnt_osm_id
     and wo.nodes[cardinality(wo.nodes)] <> wo.pnt_osm_id
@@ -486,13 +497,16 @@ where   wi.nodes[cardinality(wi.nodes)] =  wi.pnt_osm_id
     and wo.tags ->> 'waterway' not in ('river', 'canal')
     and ex.way_osm_id is null;
 
+drop table :schema.tmp_err_types_ways;
+
 -- geom (passed through from typed osm_ways) is already LineString; in_pnt is computed
 -- via st_endpoint() and comes back untyped — constrain it too so QGIS can load it as points.
 alter table :schema.err_types alter column in_pnt type geometry(Point,4326) using st_setsrid(in_pnt,4326);
 
 create index on :schema.err_types using gist(geom);
 create index on :schema.err_types using gist(in_pnt);
--- 1m 35s
+-- was "1m 35s" on the original author's local machine; that number is stale, see the
+-- CTE-vs-materialized-table note above for the real bottleneck this had on Aurora.
 
 
 
