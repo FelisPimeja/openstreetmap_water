@@ -97,10 +97,9 @@ create index on :schema.fin_wikidata_waterways_ru using gist(geom);
 
     
     
--- create index start_point_idx on :schema.osm_ways((nodes[1]));     
+-- create index start_point_idx on :schema.osm_ways((nodes[1]));
 -- create index end_point_idx on :schema.osm_ways((nodes[cardinality(nodes)]));
 -- create index on :schema.osm_areas(way_osm_id);
--- 3s
 
 
 drop table if exists :schema.contours;
@@ -114,7 +113,6 @@ alter table :schema.contours alter column geom type geometry(LineString,4326) us
 
 create index on  :schema.contours (way_osm_id);
 create index on  :schema.contours using gist(geom);
--- 60s
 
 
 drop table if exists :schema.graph_nodes;
@@ -133,7 +131,6 @@ alter table :schema.graph_nodes alter column geom type geometry(Point,4326) usin
 
 create index on :schema.graph_nodes(pnt_osm_id);
 create index on :schema.graph_nodes using gist(geom);
---15s
 
 
 
@@ -177,7 +174,6 @@ join :schema.contours wc
 create index on :schema.graph_nodes_stat(pnt_osm_id, type);
 create index on :schema.graph_nodes_stat(way_osm_id);
 create index on :schema.graph_nodes_stat(type);
--- 2m 20s
 
 
 
@@ -197,7 +193,6 @@ from :schema.graph_nodes_stat
 --create index on :schema.graph_nodes_stat2(pnt_osm_id);
 create index on :schema.graph_nodes_stat_agg(str, mid, "end", bnk, cst, dam, pnt_osm_id);
 create index on :schema.graph_nodes_stat_agg(pnt_osm_id, str, mid, "end", bnk, cst, dam);
--- 9s
 
 
 
@@ -257,7 +252,6 @@ where w1.tags ? 'waterway';
 alter table :schema.err_overlapping_ways alter column geom type geometry(MultiLineString,4326) using st_setsrid(st_multi(geom),4326);
 
 create index err_overlapping_ways_geom_idx on :schema.err_overlapping_ways using gist(geom);
--- 3m
 
 
 
@@ -277,7 +271,6 @@ where   sa.str = 0
     and sa.bnk > 0;
 
 create index on :schema.err_unconnected_to_network using gist(geom);
--- 5s
 
 
 
@@ -305,7 +298,6 @@ where ww.tags ->> 'waterway' ~ 'river|stream|canal|drain|ditch'
     );
 
 create index on :schema.err_possible_wrong_dir using gist(geom);
--- 7s
 
 
 
@@ -391,7 +383,6 @@ order by in_osm_id, least(st_length(geog1::geography), st_length(geog2::geograph
 alter table :schema.err_possible_missing_segments alter column geom type geometry(LineString,4326) using st_setsrid(geom,4326);
 
 create index on :schema.err_possible_missing_segments using gist(geom);
--- 3m 20s
 
 
 
@@ -449,7 +440,6 @@ where ms.in_osm_id is null;
 alter table :schema.err_possible_missing_segments2 alter column geom type geometry(LineString,4326) using st_setsrid(geom,4326);
 
 create index on :schema.err_possible_missing_segments2 using gist(geom);
--- 15s
 
 
 
@@ -459,10 +449,10 @@ drop table if exists :schema.err_types;
 
 -- Materialized on purpose, not a CTE: this table gets self-joined twice below
 -- (directly, and again inside `exceptions`) on pnt_osm_id. As an inline CTE, Postgres
--- has no stats/index for that self-join and picked an unindexed nested loop — 266s on
--- the Moscow pilot alone (99% of the whole proccess_data.sql run) vs 0.1s once indexed
--- and ANALYZEd as a real table. Verified identical output (116/116 rows, 0 mismatched)
--- before switching. Dropped again once err_types is built — only needed here.
+-- has no stats/index for that self-join and picked an unindexed nested loop instead of
+-- an indexed one — see EXPLAIN ANALYZE before/after in the git history of this file.
+-- Verified identical output before switching (row-for-row diff against the CTE version).
+-- Dropped again once err_types is built — only needed here.
 drop table if exists :schema.tmp_err_types_ways;
 create table :schema.tmp_err_types_ways as
 select ww.way_osm_id, ww.tags, ww.geom, pnt_osm_id, ww.nodes
@@ -505,8 +495,6 @@ alter table :schema.err_types alter column in_pnt type geometry(Point,4326) usin
 
 create index on :schema.err_types using gist(geom);
 create index on :schema.err_types using gist(in_pnt);
--- was "1m 35s" on the original author's local machine; that number is stale, see the
--- CTE-vs-materialized-table note above for the real bottleneck this had on Aurora.
 
 
 
@@ -706,10 +694,9 @@ with errors as (
     --
 )
 select way_osm_id, array_agg(err_id) err_list
-from errors 
+from errors
 group by way_osm_id
 ;
--- 20s
 
 
 -- Таблица кодов ошибок
