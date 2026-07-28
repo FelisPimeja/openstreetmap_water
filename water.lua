@@ -1,5 +1,5 @@
 local srid = 4326
-local loc_schema = 'water'
+local loc_schema = os.getenv('WATER_SCHEMA') or 'water'
 local tables = {}
 
 

@@ -1,3 +1,11 @@
-. .env
+#!/usr/bin/env bash
+set -euo pipefail
 
-osm2pgsql -c -d $pgdb -U $pguser -O flex -S ./water.lua  $osmData
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(dirname "$SCRIPT_DIR")"
+
+set -a
+. "$ROOT_DIR/.env"
+set +a
+
+osm2pgsql -c -d "$PGDB" -U "$PGUSER" -H "$PGHOST" -P "$PGPORT" -O flex -S "$ROOT_DIR/water.lua" "$OSMDATA"

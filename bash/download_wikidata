@@ -1,8 +1,18 @@
+#!/usr/bin/env bash
 # Download WikiData Query results as CSV file
-. .env
+set -euo pipefail
 
-curl --output "${wikidir}/wikidata.csv" \
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(dirname "$SCRIPT_DIR")"
+
+set -a
+. "$ROOT_DIR/.env"
+set +a
+
+mkdir -p "$WIKIDIR"
+
+curl --fail --output "$WIKIDIR/wikidata.csv" \
      --request POST https://query.wikidata.org/sparql \
      --header "Accept: text/csv" \
-     --data-urlencode query@${projectdir}/wikidata_watercources.rq \
+     --data-urlencode query@"$ROOT_DIR/wikidata_watercources.rq" \
      --retry-all-errors

@@ -1,5 +1,16 @@
+#!/usr/bin/env bash
 # Import Wikidata into DB
-. .env
-psql -U $pguser -d $pgdb -c \
-    "create schema if not exists water; create table if not exists water.raw_wikidata_waterways_ru (waterway text, labelru text, labelen text, sourcecoords text, mouthcoords text, mouthqid text, length numeric, gvr text, osm_id int8, tributaries text); truncate water.raw_wikidata_waterways_ru;"
-psql -U $pguser -d $pgdb -c "\copy water.raw_wikidata_waterways_ru from ${wikidir}/wikidata.csv delimiter ',' csv header"
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(dirname "$SCRIPT_DIR")"
+
+set -a
+. "$ROOT_DIR/.env"
+set +a
+
+SCHEMA="${WATER_SCHEMA:-water}"
+
+psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDB" -c \
+    "create schema if not exists \"$SCHEMA\"; create table if not exists \"$SCHEMA\".raw_wikidata_waterways_ru (waterway text, labelru text, labelen text, sourcecoords text, mouthcoords text, mouthqid text, length numeric, gvr text, osm_id int8, tributaries text); truncate \"$SCHEMA\".raw_wikidata_waterways_ru;"
+psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDB" -c "\copy \"$SCHEMA\".raw_wikidata_waterways_ru from '$WIKIDIR/wikidata.csv' delimiter ',' csv header"

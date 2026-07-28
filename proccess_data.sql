@@ -1,4 +1,6 @@
-SET client_min_messages TO WARNING; 
+-- Run with: psql ... -v schema=YOUR_SCHEMA_NAME -f proccess_data.sql
+-- (schema must already exist and contain osm_points/osm_ways/osm_areas/osm_relations from water.lua import)
+SET client_min_messages TO WARNING;
 
 
 ------------------------------------------
@@ -6,8 +8,8 @@ SET client_min_messages TO WARNING;
 ------------------------------------------
 
 -- First pass proccessing Wikidata dataset:
-drop table if exists water.tmp_wikidata_waterways_ru cascade;
-create table water.tmp_wikidata_waterways_ru as
+drop table if exists :schema.tmp_wikidata_waterways_ru cascade;
+create table :schema.tmp_wikidata_waterways_ru as
 select 
 	replace(waterway, 'http://www.wikidata.org/entity/', '')   id ,
 	nullif(labelru, '')                                        name_ru,
@@ -23,14 +25,14 @@ select
 	nullif(gvr, '')                                            gvr_id,
 	osm_id,
 	string_to_array(nullif(tributaries, ''), '; ')             tributary_id_list
-from water.raw_wikidata_waterways_ru;
-create index on water.tmp_wikidata_waterways_ru(id);
+from :schema.raw_wikidata_waterways_ru;
+create index on :schema.tmp_wikidata_waterways_ru(id);
 
 
 
 -- Build very simple waterway geometry from start, end points and tributary mouth points (if any):
-drop table if exists water.fin_wikidata_waterways_ru cascade;
-create table water.fin_wikidata_waterways_ru as 
+drop table if exists :schema.fin_wikidata_waterways_ru cascade;
+create table :schema.fin_wikidata_waterways_ru as 
 select 
 	w1.id, 
 	w1.name_ru, 
@@ -64,8 +66,8 @@ select
 			)
 		)
 	) geom
-from water.tmp_wikidata_waterways_ru w1
-left join water.tmp_wikidata_waterways_ru w2 
+from :schema.tmp_wikidata_waterways_ru w1
+left join :schema.tmp_wikidata_waterways_ru w2 
 	on w2.id = any(w1.tributary_id_list)
 group by 
 	w1.id, w1.name_ru, w1.tributary_id_list, 
@@ -74,16 +76,16 @@ group by
 	w1.gvr_id, w1.osm_id;
 
 -- Create indexes 
-create index on water.fin_wikidata_waterways_ru(id);
-create index on water.fin_wikidata_waterways_ru(mouthq_id);
-create index on water.fin_wikidata_waterways_ru(tributary_id_list);
-create index on water.fin_wikidata_waterways_ru(gvr_id);
-create index on water.fin_wikidata_waterways_ru using gist(source_pnt);
-create index on water.fin_wikidata_waterways_ru using gist(mouth_pnt);
-create index on water.fin_wikidata_waterways_ru using gist(geom);
+create index on :schema.fin_wikidata_waterways_ru(id);
+create index on :schema.fin_wikidata_waterways_ru(mouthq_id);
+create index on :schema.fin_wikidata_waterways_ru(tributary_id_list);
+create index on :schema.fin_wikidata_waterways_ru(gvr_id);
+create index on :schema.fin_wikidata_waterways_ru using gist(source_pnt);
+create index on :schema.fin_wikidata_waterways_ru using gist(mouth_pnt);
+create index on :schema.fin_wikidata_waterways_ru using gist(geom);
 
 -- Drop temporary tables
---drop table if exists water.tmp_wikidata_waterways_ru cascade;
+--drop table if exists :schema.tmp_wikidata_waterways_ru cascade;
 
 
 
@@ -95,43 +97,43 @@ create index on water.fin_wikidata_waterways_ru using gist(geom);
 
     
     
--- create index start_point_idx on water.osm_ways((nodes[1]));     
--- create index end_point_idx on water.osm_ways((nodes[cardinality(nodes)]));
--- create index on water.osm_areas(way_osm_id);
+-- create index start_point_idx on :schema.osm_ways((nodes[1]));     
+-- create index end_point_idx on :schema.osm_ways((nodes[cardinality(nodes)]));
+-- create index on :schema.osm_areas(way_osm_id);
 -- 3s
 
 
-drop table if exists water.contours;
-create table water.contours as 
+drop table if exists :schema.contours;
+create table :schema.contours as 
 select way_osm_id, tags, st_subdivide(st_boundary(geom)) geom
-from water.osm_areas
+from :schema.osm_areas
 where tags ->> 'natural' = 'water';
 
-create index on  water.contours (way_osm_id);
-create index on  water.contours using gist(geom);
+create index on  :schema.contours (way_osm_id);
+create index on  :schema.contours using gist(geom);
 -- 60s
 
 
-drop table if exists water.graph_nodes;
-create table water.graph_nodes as 
+drop table if exists :schema.graph_nodes;
+create table :schema.graph_nodes as 
 select distinct * from (
     select nodes[1] pnt_osm_id, st_startpoint(geom) geom 
-    from water.osm_ways 
+    from :schema.osm_ways 
     where tags ->> 'waterway' in ('river', 'stream', 'canal', 'drain', 'ditch')
     union all
     select nodes[cardinality(nodes)] pnt_osm_id, st_endpoint(geom) geom 
-    from water.osm_ways 
+    from :schema.osm_ways 
     where tags ->> 'waterway' in ('river', 'stream', 'canal', 'drain', 'ditch')
 ) a;
 
-create index on water.graph_nodes(pnt_osm_id);
-create index on water.graph_nodes using gist(geom);
+create index on :schema.graph_nodes(pnt_osm_id);
+create index on :schema.graph_nodes using gist(geom);
 --15s
 
 
 
-drop table if exists water.graph_nodes_stat;
-create table water.graph_nodes_stat as 
+drop table if exists :schema.graph_nodes_stat;
+create table :schema.graph_nodes_stat as 
 select 
     gn.pnt_osm_id,
     ww.way_osm_id,
@@ -140,8 +142,8 @@ select
         when gn.pnt_osm_id = ww.nodes[cardinality(nodes)]   then 'end'
         else 'mid'
     end type
-from water.graph_nodes gn
-join water.osm_ways ww 
+from :schema.graph_nodes gn
+join :schema.osm_ways ww 
     on st_intersects(gn.geom, ww.geom)
         and ww.tags ->> 'waterway' in ('river', 'stream', 'canal', 'drain', 'ditch')
 union all    
@@ -152,8 +154,8 @@ select
         when ww.tags ->> 'natural' = 'coastline' then 'cst' 
         else 'dam'
     end type
-from water.graph_nodes gn
-join water.osm_ways ww 
+from :schema.graph_nodes gn
+join :schema.osm_ways ww 
     on st_intersects(gn.geom, ww.geom)
         and (   ww.tags ->> 'natural' = 'coastline'
             or  ww.tags ->> 'waterway' in ('dam', 'weir')
@@ -163,19 +165,19 @@ select
     gn.pnt_osm_id,
     wc.way_osm_id,
     'bnk' type
-from water.graph_nodes gn
-join water.contours wc 
+from :schema.graph_nodes gn
+join :schema.contours wc 
     on st_intersects(gn.geom, wc.geom);
 
-create index on water.graph_nodes_stat(pnt_osm_id, type);
-create index on water.graph_nodes_stat(way_osm_id);
-create index on water.graph_nodes_stat(type);
+create index on :schema.graph_nodes_stat(pnt_osm_id, type);
+create index on :schema.graph_nodes_stat(way_osm_id);
+create index on :schema.graph_nodes_stat(type);
 -- 2m 20s
 
 
 
-drop table if exists water.graph_nodes_stat_agg; 
-create table water.graph_nodes_stat_agg as 
+drop table if exists :schema.graph_nodes_stat_agg; 
+create table :schema.graph_nodes_stat_agg as 
 select 
     pnt_osm_id, 
     count(*) filter(where type = 'str')  str,
@@ -184,12 +186,12 @@ select
     count(*) filter(where type = 'bnk')  bnk,
     count(*) filter(where type = 'cst')  cst,
     count(*) filter(where type = 'dam')  dam
-from water.graph_nodes_stat
+from :schema.graph_nodes_stat
     group by pnt_osm_id;
 
---create index on water.graph_nodes_stat2(pnt_osm_id);
-create index on water.graph_nodes_stat_agg(str, mid, "end", bnk, cst, dam, pnt_osm_id);
-create index on water.graph_nodes_stat_agg(pnt_osm_id, str, mid, "end", bnk, cst, dam);
+--create index on :schema.graph_nodes_stat2(pnt_osm_id);
+create index on :schema.graph_nodes_stat_agg(str, mid, "end", bnk, cst, dam, pnt_osm_id);
+create index on :schema.graph_nodes_stat_agg(pnt_osm_id, str, mid, "end", bnk, cst, dam);
 -- 9s
 
 
@@ -197,55 +199,55 @@ create index on water.graph_nodes_stat_agg(pnt_osm_id, str, mid, "end", bnk, cst
 
 
 -- Check for duplicated ways:
-drop table if exists water.err_duplicated_ways cascade;
-create table water.err_duplicated_ways as
+drop table if exists :schema.err_duplicated_ways cascade;
+create table :schema.err_duplicated_ways as
 with dups as (
     select geom 
-    from water.osm_ways
+    from :schema.osm_ways
     where tags ? 'waterway'
     group by geom
     having count(*) > 1
 )
 select ww.* 
-from water.osm_ways ww
+from :schema.osm_ways ww
 join dups using(geom);
 
-create index err_duplicated_ways_geom_idx on water.err_duplicated_ways using gist(geom);
+create index err_duplicated_ways_geom_idx on :schema.err_duplicated_ways using gist(geom);
 
 
 
 -- Check for duplicated areas:
-drop table if exists water.err_duplicated_areas cascade;
-create table water.err_duplicated_areas as 
+drop table if exists :schema.err_duplicated_areas cascade;
+create table :schema.err_duplicated_areas as 
 with dups as (
     select geom 
-    from water.osm_areas
+    from :schema.osm_areas
     where tags ->> 'natural' in ('water', 'wetland')
     group by geom
     having count(*) > 1
 )
 select wa.* 
-from water.osm_areas wa
+from :schema.osm_areas wa
 join dups using(geom);
 
-create index err_duplicated_areas_geom_idx on water.err_duplicated_areas using gist(geom);
+create index err_duplicated_areas_geom_idx on :schema.err_duplicated_areas using gist(geom);
 
 
 -- Check for overlapping waterways (excluding full duplicates):
-drop table if exists water.err_overlapping_ways cascade;
-create table water.err_overlapping_ways as 
+drop table if exists :schema.err_overlapping_ways cascade;
+create table :schema.err_overlapping_ways as 
 select 
     array[w1.way_osm_id, w2.way_osm_id] osm_ids,
     st_collectionextract(st_intersection(w1.geom, w2.geom), 2) geom
-from water.osm_ways w1
-join water.osm_ways w2
+from :schema.osm_ways w1
+join :schema.osm_ways w2
     on w1.way_osm_id > w2.way_osm_id
         and st_overlaps(w1.geom, w2.geom)
         and not st_equals(w1.geom, w2.geom)
         and w2.tags ? 'waterway'
 where w1.tags ? 'waterway';
 
-create index err_overlapping_ways_geom_idx on water.err_overlapping_ways using gist(geom);
+create index err_overlapping_ways_geom_idx on :schema.err_overlapping_ways using gist(geom);
 -- 3m
 
 
@@ -253,11 +255,11 @@ create index err_overlapping_ways_geom_idx on water.err_overlapping_ways using g
 
 
 -- Unconnected to network, connected to waterways:
-drop table if exists water.err_unconnected_to_network;
-create table water.err_unconnected_to_network as
+drop table if exists :schema.err_unconnected_to_network;
+create table :schema.err_unconnected_to_network as
 select ww.way_osm_id, ww.tags, ww.geom 
-from water.graph_nodes_stat_agg sa
-join water.osm_ways ww
+from :schema.graph_nodes_stat_agg sa
+join :schema.osm_ways ww
     on ww.nodes[cardinality(nodes)] = sa.pnt_osm_id
         and ww.tags ->> 'waterway' ~ 'river|stream|canal|drain|ditch'
 where   sa.str = 0 
@@ -265,20 +267,20 @@ where   sa.str = 0
     and sa.cst = 0
     and sa.bnk > 0;
 
-create index on water.err_unconnected_to_network using gist(geom);
+create index on :schema.err_unconnected_to_network using gist(geom);
 -- 5s
 
 
 
 
 -- Waterways with possible wrong directions:
-drop table if exists water.err_possible_wrong_dir cascade;
-create table water.err_possible_wrong_dir as
+drop table if exists :schema.err_possible_wrong_dir cascade;
+create table :schema.err_possible_wrong_dir as
 select ww.way_osm_id, ww.tags, ww.geom 
-from water.osm_ways ww
-left join water.graph_nodes_stat_agg ws
+from :schema.osm_ways ww
+left join :schema.graph_nodes_stat_agg ws
     on ww.nodes[1] = ws.pnt_osm_id
-left join water.graph_nodes_stat_agg we
+left join :schema.graph_nodes_stat_agg we
     on ww.nodes[cardinality(nodes)] = we.pnt_osm_id
 where ww.tags ->> 'waterway' ~ 'river|stream|canal|drain|ditch'
     and we.str = 0
@@ -293,28 +295,28 @@ where ww.tags ->> 'waterway' ~ 'river|stream|canal|drain|ditch'
         and ws.str   > 1
     );
 
-create index on water.err_possible_wrong_dir using gist(geom);
+create index on :schema.err_possible_wrong_dir using gist(geom);
 -- 7s
 
 
 
 
 
-drop table if exists water.err_possible_missing_segments;
-create table water.err_possible_missing_segments as
+drop table if exists :schema.err_possible_missing_segments;
+create table :schema.err_possible_missing_segments as
 with water_points as (
     select 
         ns.way_osm_id waterarea_osm_id, 
         sa.pnt_osm_id, sa.str, sa.end, sa.bnk
-    from water.graph_nodes_stat     ns
-    join water.graph_nodes_stat_agg sa
+    from :schema.graph_nodes_stat     ns
+    join :schema.graph_nodes_stat_agg sa
         on ns.pnt_osm_id = sa.pnt_osm_id
             and sa.bnk > 0
             and sa.cst = 0
             and (   (sa.str > 0 and sa.end = 0)
                 or  (sa.end > 0 and sa.str = 0)
             )
-    join water.osm_areas wa 
+    join :schema.osm_areas wa 
         on wa.way_osm_id = ns.way_osm_id
             and coalesce(wa.tags ->> 'water', '') <> 'river' --and wa.way_osm_id = 332455907
     where ns.type = 'bnk' 
@@ -325,7 +327,7 @@ water_area as(
 --        st_pointonsurface(wa.geom) geom
         (st_maximuminscribedcircle(st_simplify(wa.geom, st_maxdistance(wa.geom, wa.geom) / 100))).center geom
     from water_points wp
-    left join water.osm_areas wa 
+    left join :schema.osm_areas wa 
         on wa.way_osm_id = wp.waterarea_osm_id
 ),
 water_out as (
@@ -335,7 +337,7 @@ water_out as (
         ww.tags, 
         st_startpoint(ww.geom) geom
     from water_points wp 
-    join water.osm_ways ww 
+    join :schema.osm_ways ww 
         on ww.nodes[1] = wp.pnt_osm_id
             and ww.tags ->> 'waterway' in ('river','stream','canal','drain','ditch')
 ),
@@ -346,7 +348,7 @@ water_in as (
         ww.tags, 
         st_endpoint(ww.geom) geom 
     from water_points wp 
-    join water.osm_ways ww 
+    join :schema.osm_ways ww 
         on ww.nodes[cardinality(nodes)] = wp.pnt_osm_id
             and ww.tags ->> 'waterway' in ('river','stream','canal','drain','ditch')
 ),
@@ -377,7 +379,7 @@ select distinct on (in_osm_id)                               -- отбрасыв
 from con_lines
 order by in_osm_id, least(st_length(geog1::geography), st_length(geog2::geography)); -- сортируем по минимальной длине связки
 
-create index on water.err_possible_missing_segments using gist(geom);
+create index on :schema.err_possible_missing_segments using gist(geom);
 -- 3m 20s
 
 
@@ -385,12 +387,12 @@ create index on water.err_possible_missing_segments using gist(geom);
 
 
 
-drop table if exists water.err_possible_missing_segments2; 
-create table water.err_possible_missing_segments2 as 
+drop table if exists :schema.err_possible_missing_segments2; 
+create table :schema.err_possible_missing_segments2 as 
 with unconnected as (
     select ww.way_osm_id, ww.tags, ww.geom, sa.pnt_osm_id
-    from water.graph_nodes_stat_agg sa
-    join water.osm_ways ww
+    from :schema.graph_nodes_stat_agg sa
+    join :schema.osm_ways ww
         on ww.nodes[cardinality(nodes)] = sa.pnt_osm_id
             and ww.tags ->> 'waterway' ~ 'river|stream|canal|drain|ditch'
     where   sa.str = 0 
@@ -401,8 +403,8 @@ with unconnected as (
 water_banks as (
     select pnt_osm_id
     from unconnected uc
-    join water.graph_nodes_stat ns using(pnt_osm_id)
-    join water.osm_areas wa 
+    join :schema.graph_nodes_stat ns using(pnt_osm_id)
+    join :schema.osm_areas wa 
         on wa.way_osm_id = ns.way_osm_id
     where ns.type = 'bnk'
         and wa.tags ->> 'water' = 'river'
@@ -415,14 +417,14 @@ select
     st_makeline(st_endpoint(un.geom), st_transform(st_closestpoint(st_transform(wn.geom, 3857), st_transform(st_endpoint(un.geom), 3857)), 4326)) geom
 from unconnected un
 join water_banks wb using(pnt_osm_id)
-left join water.err_possible_missing_segments ms 
+left join :schema.err_possible_missing_segments ms 
     on ms.in_osm_id = un.way_osm_id
 join lateral (
     select 
         ww.way_osm_id,
         ww.tags,
         ww.geom
-    from water.osm_ways ww
+    from :schema.osm_ways ww
     where ww.way_osm_id <> un.way_osm_id
         and ww.tags ->> 'waterway' in ('river','canal'/*,'stream','drain','ditch'*/)
         and not st_intersects(un.geom, ww.geom)
@@ -433,20 +435,20 @@ join lateral (
 where ms.in_osm_id is null;
 --    and un.tags ->> 'water' = 'river';
 
-create index on water.err_possible_missing_segments2 using gist(geom);
+create index on :schema.err_possible_missing_segments2 using gist(geom);
 -- 15s
 
 
 
 
 
-drop table if exists water.err_types; 
-create table water.err_types as 
+drop table if exists :schema.err_types; 
+create table :schema.err_types as 
 with ways as (
     select ww.way_osm_id, ww.tags, ww.geom, pnt_osm_id, ww.nodes
-    from water.graph_nodes_stat_agg sa
-    join water.graph_nodes_stat ns using(pnt_osm_id)
-    join water.osm_ways ww using(way_osm_id)
+    from :schema.graph_nodes_stat_agg sa
+    join :schema.graph_nodes_stat ns using(pnt_osm_id)
+    join :schema.osm_ways ww using(way_osm_id)
     where   sa."end" > 0
         and (sa.mid > 0 or sa.str > 0)
 --        and (ww.nodes[cardinality(nodes)] = pnt_osm_id)
@@ -472,7 +474,7 @@ where   wi.nodes[cardinality(wi.nodes)] =  wi.pnt_osm_id
     and ex.way_osm_id is null;
 
 
-create index on water.err_types using gist(geom);
+create index on :schema.err_types using gist(geom);
 -- 1m 35s
 
 
@@ -481,14 +483,14 @@ create index on water.err_types using gist(geom);
 -- Проверки тегов
 -----------------------------------------------------
 
-drop table if exists water.err_possible_tagging_mistakes;
-create table water.err_possible_tagging_mistakes as 
+drop table if exists :schema.err_possible_tagging_mistakes;
+create table :schema.err_possible_tagging_mistakes as 
 with errors as (
     -- Culverts over 100 m long
     select
         way_osm_id, 
         '6-1' err_id
-    from water.osm_ways
+    from :schema.osm_ways
     where   tags ->> 'tunnel' = 'culvert'
         and st_length(geom::geography) > 100
     ---------
@@ -499,7 +501,7 @@ with errors as (
         way_osm_id,
         '6-2' err_id
     --    'http://localhost:8111/load_object?objects=w' || way_osm_id edit_in_josm,
-    from water.osm_ways
+    from :schema.osm_ways
     where   tags ->> 'waterway' in ('river', 'stream', 'canal', 'drain')
         and tags ->> 'bridge' <> 'aqueduct'
     ---------
@@ -513,7 +515,7 @@ with errors as (
                 then '6-3'
         end err_id
     --    'http://localhost:8111/load_object?objects=w' || way_osm_id edit_in_josm,
-    from water.osm_areas
+    from :schema.osm_areas
     where  tags ->> 'landuse' = 'reservoir'
     ---------
     union all
@@ -526,7 +528,7 @@ with errors as (
                 then '6-4'
         end err_id
     --    'http://localhost:8111/load_object?objects=w' || way_osm_id edit_in_josm,
-    from water.osm_areas
+    from :schema.osm_areas
     where  tags ? 'water:type'
     ---------
     union all
@@ -551,7 +553,7 @@ with errors as (
             when tags ->> 'water' = 'natural'                               then '6-11'
         end err_id
     --    'http://localhost:8111/load_object?objects=w' || way_osm_id edit_in_josm,
-    from water.osm_areas
+    from :schema.osm_areas
     where  tags ->> 'water' ~* '^(tidal|intermittent|bay|cove|fishpond|riverbank|natural)$' 
     ---------
     union all
@@ -593,7 +595,7 @@ with errors as (
             when tags ?   'waterway'                        then '6-35'
         end err_id
     --    'http://localhost:8111/load_object?objects=w' || way_osm_id edit_in_josm,
-    from water.osm_areas
+    from :schema.osm_areas
     where   tags  ?  'waterway'
         and tags ->> 'waterway' !~ '^(dam|boatyard|dock|fuel|sluice_gate|offshore_field)$'
     ---------
@@ -611,7 +613,7 @@ with errors as (
             when tags ->> 'waterway' = 'rapids'                     then '6-43'
             else '6-44' 
         end err_id
-    from water.osm_ways, jsonb_object_keys(tags) keys
+    from :schema.osm_ways, jsonb_object_keys(tags) keys
     where   tags ? 'water'
     group by way_osm_id, tags
     ---------
@@ -626,7 +628,7 @@ with errors as (
             when tags ->> 'name' ~* 'старица' 
                 and coalesce(tags ->> 'water', '') <> 'oxbow' then '6-46'
         end err_id
-    from water.osm_ways
+    from :schema.osm_ways
     where   tags ->> 'name' ~* 'старица' 
         and coalesce(tags ->> 'water', '') <> 'oxbow'    
     ---------
@@ -641,7 +643,7 @@ with errors as (
             when tags ->> 'name' ~ '^(\yр\.|\yруч\.|\кан\.\y|\yпрот\.|\yовр\.|\yпор\.|\yрод\.|\yсух\.|\yб\.|\yбол\.|\yбр\.|\yвдп\.|\yвдхр\.)$'  
                 then '6-48'
         end err_id
-    from water.osm_ways
+    from :schema.osm_ways
     where   tags ->> 'name' ~ '(\yр\.|\yруч\.|\кан\.\y|\yпрот\.|\yовр\.|\yпор\.|\yрод\.|\yсух\.|\yб\.|\yбол\.|\yбр\.|\yвдп\.|\yвдхр\.)'
     ---------
     union all
@@ -655,7 +657,7 @@ with errors as (
             when tags ->> 'name' ~ '^(\yр\.|\yруч\.|\кан\.\y|\yпрот\.|\yовр\.|\yпор\.|\yрод\.|\yсух\.|\yб\.|\yбол\.|\yбр\.|\yвдп\.|\yвдхр\.)$'  
                 then '6-48'
         end err_id
-    from water.osm_areas
+    from :schema.osm_areas
     where   tags ->> 'name' ~ '(\yр\.|\yруч\.|\кан\.\y|\yпрот\.|\yовр\.|\yпор\.|\yрод\.|\yсух\.|\yб\.|\yбол\.|\yбр\.|\yвдп\.|\yвдхр\.|\yбол\.|\yоз\.|\yпр\.)'
     -----------
     --union all
@@ -667,7 +669,7 @@ with errors as (
     --    tags, 
     --    '6-50' err_id,
     --    geom
-    --from water.osm_ways
+    --from :schema.osm_ways
     --where   tags ->> 'waterway' <> 'river'
     --    and tags ->> 'name' ~* '^.+(([гвбмкшщ]|к[сш]|)а|[нл]я)$'
     --
@@ -680,8 +682,8 @@ group by way_osm_id
 
 
 -- Таблица кодов ошибок
-drop table if exists water.err_codes; 
-create table water.err_codes as 
+drop table if exists :schema.err_codes; 
+create table :schema.err_codes as 
 select *
 from (
     values
@@ -748,34 +750,34 @@ from (
 
 
 -- Все ошибки в одной таблице (с маппингом расшифровок через коды)
-drop table if exists water.err_all; 
-create table water.err_all as 
+drop table if exists :schema.err_all; 
+create table :schema.err_all as 
 with errors as (
-    select way_osm_id osm_id, '1' err_id from water.err_duplicated_areas
+    select way_osm_id osm_id, '1' err_id from :schema.err_duplicated_areas
     union all
-    select way_osm_id osm_id, '1' err_id from water.err_duplicated_ways
+    select way_osm_id osm_id, '1' err_id from :schema.err_duplicated_ways
     union all
-    select osm_id, '2' err_id from water.err_overlapping_ways, unnest(osm_ids) osm_id 
+    select osm_id, '2' err_id from :schema.err_overlapping_ways, unnest(osm_ids) osm_id 
     union all
-    select way_osm_id osm_id, '3' err_id from water.err_possible_wrong_dir
+    select way_osm_id osm_id, '3' err_id from :schema.err_possible_wrong_dir
     union all
-    select way_osm_id osm_id, '4' err_id from water.err_types
+    select way_osm_id osm_id, '4' err_id from :schema.err_types
     union all
-    select way_osm_id osm_id, '5' err_id from water.err_unconnected_to_network
+    select way_osm_id osm_id, '5' err_id from :schema.err_unconnected_to_network
     union all
     select way_osm_id osm_id, err_id 
-    from water.err_possible_tagging_mistakes, unnest(err_list) err_id
+    from :schema.err_possible_tagging_mistakes, unnest(err_list) err_id
 )
 select 
     osm_id, 
     array_agg(distinct err_id) err_ids,
     array_agg(distinct description) err_list    
 from errors                 er
-left join water.err_codes   ec using(err_id)
+left join :schema.err_codes   ec using(err_id)
 where err_id is not null
 group by osm_id;
 
-create index on water.err_all(osm_id);
+create index on :schema.err_all(osm_id);
 
 
 
