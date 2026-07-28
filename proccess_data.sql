@@ -104,10 +104,13 @@ create index on :schema.fin_wikidata_waterways_ru using gist(geom);
 
 
 drop table if exists :schema.contours;
-create table :schema.contours as 
+create table :schema.contours as
 select way_osm_id, tags, st_subdivide(st_boundary(geom)) geom
 from :schema.osm_areas
 where tags ->> 'natural' = 'water';
+
+-- st_boundary/st_subdivide return untyped geometry; constrain for QGIS (single-type layers).
+alter table :schema.contours alter column geom type geometry(LineString,4326) using st_setsrid(geom,4326);
 
 create index on  :schema.contours (way_osm_id);
 create index on  :schema.contours using gist(geom);
@@ -125,6 +128,8 @@ select distinct * from (
     from :schema.osm_ways 
     where tags ->> 'waterway' in ('river', 'stream', 'canal', 'drain', 'ditch')
 ) a;
+
+alter table :schema.graph_nodes alter column geom type geometry(Point,4326) using st_setsrid(geom,4326);
 
 create index on :schema.graph_nodes(pnt_osm_id);
 create index on :schema.graph_nodes using gist(geom);
@@ -246,6 +251,10 @@ join :schema.osm_ways w2
         and not st_equals(w1.geom, w2.geom)
         and w2.tags ? 'waterway'
 where w1.tags ? 'waterway';
+
+-- st_collectionextract(...,2) can return LineString or MultiLineString depending on the
+-- overlap topology (single vs. multiple disjoint segments) — normalize to Multi for QGIS.
+alter table :schema.err_overlapping_ways alter column geom type geometry(MultiLineString,4326) using st_setsrid(st_multi(geom),4326);
 
 create index err_overlapping_ways_geom_idx on :schema.err_overlapping_ways using gist(geom);
 -- 3m
@@ -379,6 +388,8 @@ select distinct on (in_osm_id)                               -- отбрасыв
 from con_lines
 order by in_osm_id, least(st_length(geog1::geography), st_length(geog2::geography)); -- сортируем по минимальной длине связки
 
+alter table :schema.err_possible_missing_segments alter column geom type geometry(LineString,4326) using st_setsrid(geom,4326);
+
 create index on :schema.err_possible_missing_segments using gist(geom);
 -- 3m 20s
 
@@ -435,6 +446,8 @@ join lateral (
 where ms.in_osm_id is null;
 --    and un.tags ->> 'water' = 'river';
 
+alter table :schema.err_possible_missing_segments2 alter column geom type geometry(LineString,4326) using st_setsrid(geom,4326);
+
 create index on :schema.err_possible_missing_segments2 using gist(geom);
 -- 15s
 
@@ -473,8 +486,12 @@ where   wi.nodes[cardinality(wi.nodes)] =  wi.pnt_osm_id
     and wo.tags ->> 'waterway' not in ('river', 'canal')
     and ex.way_osm_id is null;
 
+-- geom (passed through from typed osm_ways) is already LineString; in_pnt is computed
+-- via st_endpoint() and comes back untyped — constrain it too so QGIS can load it as points.
+alter table :schema.err_types alter column in_pnt type geometry(Point,4326) using st_setsrid(in_pnt,4326);
 
 create index on :schema.err_types using gist(geom);
+create index on :schema.err_types using gist(in_pnt);
 -- 1m 35s
 
 

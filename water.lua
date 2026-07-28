@@ -42,8 +42,12 @@ tables.areas = osm2pgsql.define_table({
     columns = {
         { column = 'tags', type = 'jsonb' },
         { column = 'nodes', sql_type = 'int8[]' },
-        { column = 'geom', type = 'geometry', projection = srid, not_null = true },
-    }, 
+        -- multipolygon, not generic geometry: process_way/process_relation both feed this
+        -- via object:as_multipolygon(), but osm2pgsql sometimes stores a single-part result
+        -- as plain Polygon under a generic column — typing it multipolygon normalizes that,
+        -- so QGIS sees one consistent geometry type per layer.
+        { column = 'geom', type = 'multipolygon', projection = srid, not_null = true },
+    },
     indexes = {
         { column = 'way_osm_id', method = 'btree' },
         { column = 'tags', method = 'gin' },
