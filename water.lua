@@ -65,7 +65,10 @@ tables.relations = osm2pgsql.define_table({
     }, 
     indexes = {
         { column = 'tags', method = 'gin' },
-        { column = 'members', method = 'btree' },
+        -- was btree: a big relation's members list serialized as jsonb can exceed
+        -- btree's ~2.7KB per-row limit (hit at Russia scale, fine at Moscow/CFD scale).
+        -- gin has no such ceiling and is the right index type for jsonb anyway.
+        { column = 'members', method = 'gin' },
     }
 })
 
