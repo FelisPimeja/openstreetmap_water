@@ -505,15 +505,15 @@ create index on :schema.err_types using gist(in_pnt);
 drop table if exists :schema.err_possible_tagging_mistakes;
 create table :schema.err_possible_tagging_mistakes as 
 with errors as (
-    -- Culverts over 100 m long
-    select
-        way_osm_id, 
-        '6-1' err_id
-    from :schema.osm_ways
-    where   tags ->> 'tunnel' = 'culvert'
-        and st_length(geom::geography) > 100
-    ---------
-    union all
+    -- 6-1 (culverts over 100 m long) disabled — no longer relevant, see project chat 2026-07-29.
+    -- select
+    --     way_osm_id,
+    --     '6-1' err_id
+    -- from :schema.osm_ways
+    -- where   tags ->> 'tunnel' = 'culvert'
+    --     and st_length(geom::geography) > 100
+    -- ---------
+    -- union all
     ---------
     -- waterway + bridge <> 'aqueduct'
     select 
