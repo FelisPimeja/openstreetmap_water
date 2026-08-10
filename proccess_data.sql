@@ -638,21 +638,6 @@ with errors as (
     ---------
     union all
     ---------
-    -- Слово 'Старица' в названии, не отражённое в тегах
-    select 
-        way_osm_id,
-        case 
-            when tags ->> 'name' ~* '^старица$' 
-                and coalesce(tags ->> 'water', '') <> 'oxbow' then '6-45'
-            when tags ->> 'name' ~* 'старица' 
-                and coalesce(tags ->> 'water', '') <> 'oxbow' then '6-46'
-        end err_id
-    from :schema.osm_ways
-    where   tags ->> 'name' ~* 'старица' 
-        and coalesce(tags ->> 'water', '') <> 'oxbow'    
-    ---------
-    union all
-    ---------
     -- Сокращённая статусная часть в названии на линейном объекте
     select 
         way_osm_id,
@@ -794,8 +779,6 @@ from (
         ('6-42',    '''water'' = ''spring -> ''waterway'' = ''stream'''),
         ('6-43',    '''water'' = ''rapids'' -> ''waterway'' = ''rapids'''),
         ('6-44',    'Ключ ''water'' не рекомендуется использовать на линейном объекте'),
-        ('6-45',    'Старица реки обозначается тегами ''waterway'' = ''oxbow''. ''Старица'' в названии не несёт смысла. Ключ ''name'' лучше убрать.'),
-        ('6-46',    'Старица реки обозначается тегами ''waterway'' = ''oxbow'''),
         ('6-47',    'Нужно убрать статусную часть из названия'),
         ('6-48',    'В ключе name статусная часть вместо названия'),
         -- Гидроформанты:
