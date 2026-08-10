@@ -118,13 +118,13 @@ create index on  :schema.contours using gist(geom);
 drop table if exists :schema.graph_nodes;
 create table :schema.graph_nodes as 
 select distinct * from (
-    select nodes[1] pnt_osm_id, st_startpoint(geom) geom 
-    from :schema.osm_ways 
-    where tags ->> 'waterway' in ('river', 'stream', 'canal', 'drain', 'ditch')
+    select nodes[1] pnt_osm_id, st_startpoint(geom) geom
+    from :schema.osm_ways
+    where tags ->> 'waterway' in ('river', 'stream', 'canal', 'drain', 'ditch', 'flowline')
     union all
-    select nodes[cardinality(nodes)] pnt_osm_id, st_endpoint(geom) geom 
-    from :schema.osm_ways 
-    where tags ->> 'waterway' in ('river', 'stream', 'canal', 'drain', 'ditch')
+    select nodes[cardinality(nodes)] pnt_osm_id, st_endpoint(geom) geom
+    from :schema.osm_ways
+    where tags ->> 'waterway' in ('river', 'stream', 'canal', 'drain', 'ditch', 'flowline')
 ) a;
 
 alter table :schema.graph_nodes alter column geom type geometry(Point,4326) using st_setsrid(geom,4326);
@@ -147,8 +147,8 @@ select
 from :schema.graph_nodes gn
 join :schema.osm_ways ww 
     on st_intersects(gn.geom, ww.geom)
-        and ww.tags ->> 'waterway' in ('river', 'stream', 'canal', 'drain', 'ditch')
-union all    
+        and ww.tags ->> 'waterway' in ('river', 'stream', 'canal', 'drain', 'ditch', 'flowline')
+union all
 select 
     gn.pnt_osm_id,
     ww.way_osm_id,
@@ -264,8 +264,8 @@ select ww.way_osm_id, ww.tags, ww.geom
 from :schema.graph_nodes_stat_agg sa
 join :schema.osm_ways ww
     on ww.nodes[cardinality(nodes)] = sa.pnt_osm_id
-        and ww.tags ->> 'waterway' ~ 'river|stream|canal|drain|ditch'
-where   sa.str = 0 
+        and ww.tags ->> 'waterway' ~ 'river|stream|canal|drain|ditch|flowline'
+where   sa.str = 0
     and sa.mid = 0
     and sa.cst = 0
     and sa.bnk > 0;
@@ -284,7 +284,7 @@ left join :schema.graph_nodes_stat_agg ws
     on ww.nodes[1] = ws.pnt_osm_id
 left join :schema.graph_nodes_stat_agg we
     on ww.nodes[cardinality(nodes)] = we.pnt_osm_id
-where ww.tags ->> 'waterway' ~ 'river|stream|canal|drain|ditch'
+where ww.tags ->> 'waterway' ~ 'river|stream|canal|drain|ditch|flowline'
     and we.str = 0
     and (
         we.mid = 0
@@ -303,6 +303,11 @@ create index on :schema.err_possible_wrong_dir using gist(geom);
 
 
 
+-- Связка через центр водоёма между уже существующими входом и выходом (в отличие от
+-- err_possible_isolated_water_areas выше — тут не ищем ничего по расстоянию, оба конца уже
+-- топологически касаются берега). Это ровно случай waterway=flowline из де-факто OSM-конвенции
+-- (см. комментарий у err_possible_isolated_water_areas выше, там же ссылки на вики) — предложение
+-- этой таблицы буквально "проведите waterway=flowline здесь".
 drop table if exists :schema.err_possible_missing_segments;
 create table :schema.err_possible_missing_segments as
 with water_points as (
@@ -340,7 +345,7 @@ water_out as (
     from water_points wp 
     join :schema.osm_ways ww 
         on ww.nodes[1] = wp.pnt_osm_id
-            and ww.tags ->> 'waterway' in ('river','stream','canal','drain','ditch')
+            and ww.tags ->> 'waterway' in ('river','stream','canal','drain','ditch','flowline')
 ),
 water_in as (
     select 
@@ -351,7 +356,7 @@ water_in as (
     from water_points wp 
     join :schema.osm_ways ww 
         on ww.nodes[cardinality(nodes)] = wp.pnt_osm_id
-            and ww.tags ->> 'waterway' in ('river','stream','canal','drain','ditch')
+            and ww.tags ->> 'waterway' in ('river','stream','canal','drain','ditch','flowline')
 ),
 con_lines as (
     select 
@@ -396,8 +401,8 @@ with unconnected as (
     from :schema.graph_nodes_stat_agg sa
     join :schema.osm_ways ww
         on ww.nodes[cardinality(nodes)] = sa.pnt_osm_id
-            and ww.tags ->> 'waterway' ~ 'river|stream|canal|drain|ditch'
-    where   sa.str = 0 
+            and ww.tags ->> 'waterway' ~ 'river|stream|canal|drain|ditch|flowline'
+    where   sa.str = 0
         and sa.mid = 0
         and sa.cst = 0
         and sa.bnk > 0
@@ -428,7 +433,7 @@ join lateral (
         ww.geom
     from :schema.osm_ways ww
     where ww.way_osm_id <> un.way_osm_id
-        and ww.tags ->> 'waterway' in ('river','canal'/*,'stream','drain','ditch'*/)
+        and ww.tags ->> 'waterway' in ('river','canal','flowline'/*,'stream','drain','ditch'*/)
         and not st_intersects(un.geom, ww.geom)
         and not ww.tags ? 'tunnel'
     order by ww.geom <-> st_endpoint(un.geom)
@@ -440,6 +445,424 @@ where ms.in_osm_id is null;
 alter table :schema.err_possible_missing_segments2 alter column geom type geometry(LineString,4326) using st_setsrid(geom,4326);
 
 create index on :schema.err_possible_missing_segments2 using gist(geom);
+
+
+
+
+-- Водоёмы (natural=water), не пересекающиеся ни с одним водотоком — кандидаты на "оторванный"
+-- исток/устье. Единица анализа — связная компонента близко расположенных изолированных
+-- водоёмов ("каскад прудов"), а не каждый водоём по отдельности: на полном прогоне по России
+-- 67.7% изолированных водоёмов (выборка) имеют другой изолированный водоём в пределах тех же
+-- 300м — если искать связку только с водотоком по отдельности для каждого пруда, получаем либо
+-- пропуск (нет кандидата рядом — молчаливо не попадает в отчёт), либо неверный далёкий коннектор
+-- вместо близкого пруда-соседа, который на самом деле часть того же каскада.
+--
+-- Компоненты размером >10 — молча исключаются из проверки целиком (не попадают ни в одну из
+-- таблиц ниже, ни в err_all). Это не каскад, а плотное природное озёрное поле (термокарст/пойма —
+-- Зап. Сибирь, Чукотка, низовья Кубани, бассейн Амура), для которого "нет выхода к сети" не
+-- диагноз, а факт ландшафта; к ним планируется вернуться отдельно. Решение и порог — см.
+-- CLAUDE.md.
+--
+-- Направление (исток/устье) берётся из направления линии водотока (nodes[1] = исток,
+-- nodes[last] = устье) на границе компоненты — то же допущение, которое иногда неверно в
+-- err_possible_wrong_dir; внутренний порядок каскада (какой пруд выше по течению) принципиально
+-- не определим по геометрии и не должен угадываться — направление нужно знать только там, где
+-- компонента реально касается настоящего водотока.
+--
+-- err_possible_isolated_water_areas (коннектор к сети найден) и err_isolated_water_clusters
+-- (компонента 2-10 без единого кандидата) — сами по себе advisory, но участники (все члены
+-- cluster_members, не только anchor-пруд) дополнительно получают err_id ('7-1'/'7-2'/'7-3') в
+-- err_all — см. блок err_all ниже.
+--
+-- Конкретное предложение по исправлению для err_possible_isolated_water_areas — это конкретный
+-- тег: провести waterway=flowline от найденного коннектора (де-факто конвенция OSM с 2024г. для
+-- водотока, проходящего через озеро/водоём без различимого русла — см. Tag:waterway=flowline
+-- https://wiki.openstreetmap.org/wiki/Tag:waterway=flowline и черновое предложение
+-- Proposal:Flowlines https://wiki.openstreetmap.org/wiki/Proposal:Flowlines, статус "Proposed"/RFC
+-- с 2024, детали вроде наследования name и порога размера водоёма оставлены на усмотрение
+-- локальных сообществ). 'flowline' уже добавлен в фильтры связности по всему файлу (graph_nodes,
+-- err_unconnected_to_network, err_possible_wrong_dir, err_possible_missing_segments/2 и ниже) —
+-- водоёмы, уже корректно связанные через существующий flowline (897 таких way в данных на
+-- 2026-08-03), больше не считаются изолированными.
+
+-- Материализуем начала/концы линий отдельными индексированными таблицами, а не CTE — тот же
+-- урок, что и с tmp_err_types_ways выше: KNN-сортировка (`<->`) по вычисленному
+-- st_startpoint/st_endpoint без собственного индекса на большом числе строк дала 266.7с на
+-- err_types при 4105 строках; здесь потенциально 1.3М+ ways по всей России.
+-- Отдельно нужна проекция geom_3857: ST_ClosestPoint и KNN-сортировка в сырых градусах (4326)
+-- дают неверный "ближайший" узел на высоких широтах (градус долготы физически короче градуса
+-- широты в разы — на 73°с.ш. почти в 3.4x), из-за чего коннектор может указать на узел
+-- за пределами реального порога расстояния. Обнаружено эмпирически на полном прогоне по России
+-- (Таймыр/Ямал/Чукотка) — без проекции расстояние в части случаев доходило до 500-600м при
+-- заданном пороге 300м. Порог по расстоянию (`st_dwithin`) при этом считается честно в
+-- geography (не подвержено этому искажению) — 3857 нужна только для выбора конкретной точки/
+-- кандидата, не для порога.
+--
+-- Важно: точка start/endway должна быть НАСТОЯЩИМ тупиком сети, а не местом разреза линии в OSM
+-- (длинный водоток обычно мапится несколькими последовательными way — конец одного ровно там же,
+-- где начало следующего). Джойним на уже посчитанный graph_nodes_stat_agg (см. выше) и требуем,
+-- чтобы в этой точке был ровно один участник (сам этот way, тип str для начала / end для конца) —
+-- иначе легко получить пару "пруд→канава" и "канава→пруд" для одного и того же way, если канава
+-- продолжается дальше другим way у самого этого узла (найдено эмпирически: 96428530→885536329 —
+-- 885536329 длиной 25.6м, его конец имел str=1 в graph_nodes_stat_agg, т.е. ровно там начинается
+-- продолжение той же канавы другим way; без этого фильтра — 40.5% "начал" и 85% "концов" по всей
+-- России оказываются такими же точками разреза, а не настоящими тупиками).
+drop table if exists :schema.tmp_way_starts;
+create table :schema.tmp_way_starts as
+select ww.way_osm_id, st_startpoint(ww.geom) geom, st_transform(st_startpoint(ww.geom), 3857) geom_3857
+from :schema.osm_ways ww
+join :schema.graph_nodes_stat_agg sa on sa.pnt_osm_id = ww.nodes[1]
+where ww.tags ->> 'waterway' ~ 'river|stream|canal|drain|ditch|flowline'
+    and not ww.tags ? 'tunnel'
+    and sa.str = 1 and sa."end" = 0 and sa.mid = 0;
+
+create index on :schema.tmp_way_starts using gist(geom_3857);
+
+-- bnk несём с собой (не фильтруем тут) — нужен ниже в err_possible_waterway_gaps, чтобы отсечь
+-- водотоки, уже доведённые до площадного водоёма и там брошенные: для них связность уже решена
+-- через err_unconnected_to_network/err_possible_missing_segments (flowline-предложение), не нужно
+-- ЕЩЁ и предлагать связку с посторонним водотоком — задваивание. Для err_possible_isolated_water_areas
+-- (inflow-поиск) bnk не фильтруем — там водоём, к которому уже что-то касается, и так не попадёт
+-- в tmp_unconnected_areas (см. её собственный not exists), так что фильтр там не нужен.
+drop table if exists :schema.tmp_way_ends;
+create table :schema.tmp_way_ends as
+select ww.way_osm_id, st_endpoint(ww.geom) geom, st_transform(st_endpoint(ww.geom), 3857) geom_3857,
+       sa.bnk
+from :schema.osm_ways ww
+join :schema.graph_nodes_stat_agg sa on sa.pnt_osm_id = ww.nodes[cardinality(ww.nodes)]
+where ww.tags ->> 'waterway' ~ 'river|stream|canal|drain|ditch|flowline'
+    and not ww.tags ? 'tunnel'
+    and sa."end" = 1 and sa.str = 0 and sa.mid = 0;
+
+create index on :schema.tmp_way_ends using gist(geom_3857);
+
+drop table if exists :schema.tmp_unconnected_areas;
+create table :schema.tmp_unconnected_areas as
+select wa.way_osm_id, wa.geom, st_transform(wa.geom, 3857) geom_3857,
+       -- упрощённая геометрия для pond-pond honest-distance джойна ниже: полный geom некоторых
+       -- полигонов доходит до 34670 вершин, st_dwithin(geography) на них — 62.9с/20000 строк;
+       -- на geom_simple (допуск 0.0002°, ~22м — на порядок точнее нашего 300м порога) — 8.4с.
+       st_multi(st_simplifypreservetopology(wa.geom, 0.0002)) geom_simple
+from :schema.osm_areas wa
+where wa.tags @> '{"natural":"water"}'
+    and not exists (
+        select 1
+        from :schema.osm_ways ww
+        where ww.tags ->> 'waterway' ~ 'river|stream|canal|drain|ditch|flowline'
+            and st_intersects(ww.geom, wa.geom)
+    );
+
+create index on :schema.tmp_unconnected_areas using gist(geom);
+create index on :schema.tmp_unconnected_areas using gist(geom_3857);
+create unique index on :schema.tmp_unconnected_areas(way_osm_id);
+analyze :schema.tmp_unconnected_areas;
+
+-- Честные pond-pond рёбра (geography, не проекция — здесь ошибка выбора компоненты весит
+-- гораздо больше, чем ошибка выбора конкретной точки, которую чинили выше через 3857).
+drop table if exists :schema.tmp_pond_edges;
+create table :schema.tmp_pond_edges as
+select a.way_osm_id a_id, b.way_osm_id b_id
+from :schema.tmp_unconnected_areas a
+join :schema.tmp_unconnected_areas b
+    on b.way_osm_id <> a.way_osm_id
+    and b.geom_3857 && st_expand(a.geom_3857, 3000)
+    and st_dwithin(a.geom_simple::geography, b.geom_simple::geography, 300)
+where a.way_osm_id < b.way_osm_id;
+
+create index on :schema.tmp_pond_edges(a_id);
+create index on :schema.tmp_pond_edges(b_id);
+
+-- Связные компоненты через min-label propagation (только для водоёмов, у которых есть хотя бы
+-- одно ребро — синглтоны без соседей не нуждаются в итерации). Итерируем до ПОЛНОЙ сходимости
+-- на неизменном графе — НЕ удаляя узлы/рёбра компонент, уже превысивших 10 участников, в
+-- процессе: попытка "рано" исключать такие узлы (экономии ради) обрывает связность для ДРУГИХ
+-- узлов, которые ещё не успели домержиться через них, и часть истинно больших компонент
+-- ошибочно разваливается на "большую" + "ложно маленькую" (проверено эмпирически: давало
+-- 354539/306592 узлов "исключено" вместо честных 369537 — граница определялась порядком
+-- итераций, а не топологией графа). Классифицируем по размеру только после полной сходимости.
+drop table if exists :schema.tmp_cluster_labels;
+create table :schema.tmp_cluster_labels as
+select x way_osm_id, x label
+from (select a_id x from :schema.tmp_pond_edges union select b_id from :schema.tmp_pond_edges) t;
+
+create unique index on :schema.tmp_cluster_labels(way_osm_id);
+create index on :schema.tmp_cluster_labels(label);
+
+drop table if exists :schema.tmp_edges_sym;
+create table :schema.tmp_edges_sym as
+select a_id node, b_id neighbor from :schema.tmp_pond_edges
+union all
+select b_id node, a_id neighbor from :schema.tmp_pond_edges;
+
+create index on :schema.tmp_edges_sym(node);
+
+-- psql не подставляет :schema внутри dollar-quoted тела DO-блока — пробрасываем значение через
+-- GUC, подставляя :schema только в обычном (не dollar-quoted) SQL-тексте снаружи.
+select set_config('opw.schema', :'schema', false);
+
+do $$
+declare
+    v_schema text := current_setting('opw.schema');
+    v_updated bigint;
+    v_iter int := 0;
+begin
+    loop
+        v_iter := v_iter + 1;
+        exit when v_iter > 1000; -- защитный потолок, в норме сходится за десятки итераций
+
+        execute format($f$
+            update %1$I.tmp_cluster_labels cl
+            set label = sub.min_label
+            from (
+                select e.node, min(nb.label) min_label
+                from %1$I.tmp_edges_sym e
+                join %1$I.tmp_cluster_labels nb on nb.way_osm_id = e.neighbor
+                group by e.node
+            ) sub
+            where cl.way_osm_id = sub.node
+                and sub.min_label < cl.label
+        $f$, v_schema);
+        get diagnostics v_updated = row_count;
+
+        exit when v_updated = 0;
+    end loop;
+
+    raise notice 'err_possible_isolated_water_areas: connected components converged after % iterations', v_iter;
+end
+$$;
+
+-- Итоговая принадлежность: синглтоны (никогда не имели ребра) + компоненты размером ≤10.
+-- Компоненты >10 — молча исключены (не участвуют ни в одной из последующих таблиц).
+drop table if exists :schema.tmp_final_clusters;
+create table :schema.tmp_final_clusters as
+select way_osm_id, label as cluster_id, cnt as cluster_size
+from (
+    select way_osm_id, label, count(*) over (partition by label) cnt
+    from :schema.tmp_cluster_labels
+) sub
+where cnt <= 10
+union all
+select way_osm_id, way_osm_id as cluster_id, 1 as cluster_size
+from :schema.tmp_unconnected_areas
+where way_osm_id not in (select way_osm_id from :schema.tmp_cluster_labels);
+
+create unique index on :schema.tmp_final_clusters(way_osm_id);
+create index on :schema.tmp_final_clusters(cluster_id);
+
+drop table if exists :schema.tmp_cluster_members;
+create table :schema.tmp_cluster_members as
+select cluster_id, cluster_size, array_agg(way_osm_id order by way_osm_id) members
+from :schema.tmp_final_clusters
+group by cluster_id, cluster_size;
+
+create unique index on :schema.tmp_cluster_members(cluster_id);
+
+-- Материализуем сами линии водотоков (упрощённая геометрия + 3857, тот же приём, что и для
+-- pond-pond рёбер выше) — нужны ниже, чтобы проверить конкурирующий водоток у каждого тупика.
+drop table if exists :schema.tmp_waterway_lines;
+create table :schema.tmp_waterway_lines as
+select way_osm_id,
+       st_transform(geom, 3857) geom_3857,
+       st_simplifypreservetopology(geom, 0.0002) geom_simple
+from :schema.osm_ways
+where tags ->> 'waterway' ~ 'river|stream|canal|drain|ditch|flowline'
+    and not tags ? 'tunnel';
+
+create index on :schema.tmp_waterway_lines using gist(geom_3857);
+
+-- Кандидаты outflow/inflow — поиск ОТ тупика, а не от пруда: для каждого настоящего тупика
+-- (tmp_way_starts/tmp_way_ends) ищем ближайший изолированный водоём, и берём его только если
+-- РЯДОМ НЕТ ДРУГОГО ВОДОТОКА БЛИЖЕ, чем найденный пруд. Иначе тупик, скорее всего, на самом деле
+-- относится к разрыву сети водотоков (пропуск в мапинге OSM — snap не случился), а не к дренажу
+-- нашего пруда, и его не стоит красть под пруд.
+--
+-- Найдено эмпирически (2026-08-03, кейс от пользователя): пруд 96428530 получил связку на
+-- тупик 885536333 (261м), хотя тот же тупик находится всего в 33.6м от ДРУГОГО водотока
+-- 885536336 — то есть на самом деле это разрыв сети, а не сброс пруда. Поиск "от пруда к
+-- ближайшему тупику" не может это обнаружить, т.к. смотрит только на дистанцию до своего же
+-- пруда; поиск "от тупика" сравнивает оба варианта сразу и естественным образом выбирает
+-- ближайший — без отдельной постфильтрации.
+drop table if exists :schema.tmp_pond_candidates;
+create table :schema.tmp_pond_candidates as
+select
+    pond.way_osm_id  wa_osm_id,
+    fc.cluster_id,
+    fc.cluster_size,
+    'outflow'        direction,
+    ts.way_osm_id,
+    st_transform(st_makeline(st_closestpoint(pua.geom_3857, ts.geom_3857), ts.geom_3857), 4326) geom,
+    pond.dist distance_m
+from :schema.tmp_way_starts ts
+join lateral (
+    select ua.way_osm_id, ua.geom_3857,
+           st_distance(ts.geom::geography, ua.geom::geography) dist
+    from :schema.tmp_unconnected_areas ua
+    where ua.geom_3857 && st_expand(ts.geom_3857, 3000)
+        and st_dwithin(ts.geom::geography, ua.geom::geography, 300) -- TODO: порог (м) требует подбора на реальных данных
+    order by ua.geom_3857 <-> ts.geom_3857
+    limit 1
+) pond on true
+join :schema.tmp_final_clusters fc on fc.way_osm_id = pond.way_osm_id
+join :schema.tmp_unconnected_areas pua on pua.way_osm_id = pond.way_osm_id
+where not exists (
+    select 1
+    from :schema.tmp_waterway_lines wl
+    where wl.way_osm_id <> ts.way_osm_id
+        and wl.geom_3857 && st_expand(ts.geom_3857, 3000)
+        and st_dwithin(wl.geom_simple::geography, ts.geom::geography, pond.dist)
+)
+union all
+select
+    pond.way_osm_id  wa_osm_id,
+    fc.cluster_id,
+    fc.cluster_size,
+    'inflow'         direction,
+    te.way_osm_id,
+    st_transform(st_makeline(te.geom_3857, st_closestpoint(pua.geom_3857, te.geom_3857)), 4326) geom,
+    pond.dist distance_m
+from :schema.tmp_way_ends te
+join lateral (
+    select ua.way_osm_id, ua.geom_3857,
+           st_distance(te.geom::geography, ua.geom::geography) dist
+    from :schema.tmp_unconnected_areas ua
+    where ua.geom_3857 && st_expand(te.geom_3857, 3000)
+        and st_dwithin(te.geom::geography, ua.geom::geography, 300) -- TODO: тот же порог
+    order by ua.geom_3857 <-> te.geom_3857
+    limit 1
+) pond on true
+join :schema.tmp_final_clusters fc on fc.way_osm_id = pond.way_osm_id
+join :schema.tmp_unconnected_areas pua on pua.way_osm_id = pond.way_osm_id
+where not exists (
+    select 1
+    from :schema.tmp_waterway_lines wl
+    where wl.way_osm_id <> te.way_osm_id
+        and wl.geom_3857 && st_expand(te.geom_3857, 3000)
+        and st_dwithin(wl.geom_simple::geography, te.geom::geography, pond.dist)
+);
+
+create index on :schema.tmp_pond_candidates(cluster_id, direction);
+
+-- Anchor-коннектор на кластер: минимальная дистанция среди ВСЕХ участников, отдельно по каждому
+-- направлению (0-2 строки на кластер). Кандидат (way_osm_id) и его победа в выборке уже решены
+-- через дистанцию до тупика (start/end узла, tmp_pond_candidates) — это нужно для определения
+-- направления и для честного сравнения с конкурирующими водотоками. Но САМУ геометрию связки и
+-- итоговый distance_m пересчитываем по ПОЛНОЙ линии кандидата (не по узлу): тупик может быть
+-- физически дальше от пруда, чем ближайшая точка где-то посередине этой же линии (найдено
+-- эмпирически 2026-08-03: узел в 49м, ближайшая точка на той же 2-точечной линии — в 21м).
+drop table if exists :schema.err_possible_isolated_water_areas cascade;
+create table :schema.err_possible_isolated_water_areas as
+with anchors as (
+    select distinct on (pc.cluster_id, pc.direction)
+        pc.wa_osm_id, pc.way_osm_id, pc.direction,
+        pc.cluster_id, pc.cluster_size, cm.members cluster_members
+    from :schema.tmp_pond_candidates pc
+    join :schema.tmp_cluster_members cm using(cluster_id)
+    order by pc.cluster_id, pc.direction, pc.distance_m
+)
+select
+    a.wa_osm_id, a.way_osm_id, a.direction,
+    case a.direction
+        when 'outflow' then st_makeline(
+            st_closestpoint(ua.geom_3857, st_transform(ww.geom, 3857)),
+            st_closestpoint(st_transform(ww.geom, 3857), ua.geom_3857)
+        )
+        else st_makeline(
+            st_closestpoint(st_transform(ww.geom, 3857), ua.geom_3857),
+            st_closestpoint(ua.geom_3857, st_transform(ww.geom, 3857))
+        )
+    end geom,
+    st_distance(ua.geom::geography, ww.geom::geography) distance_m,
+    a.cluster_id, a.cluster_size, a.cluster_members
+from anchors a
+join :schema.tmp_unconnected_areas ua on ua.way_osm_id = a.wa_osm_id
+join :schema.osm_ways ww on ww.way_osm_id = a.way_osm_id;
+
+alter table :schema.err_possible_isolated_water_areas
+    alter column geom type geometry(LineString,4326) using st_transform(geom,4326);
+
+create index on :schema.err_possible_isolated_water_areas using gist(geom);
+create index on :schema.err_possible_isolated_water_areas(wa_osm_id);
+create index on :schema.err_possible_isolated_water_areas(cluster_id);
+
+-- Полностью изолированные каскады (2-10 участников, ни у одного нет ни одного кандидата в
+-- пределах порога ни в одном направлении) — то самое "проблема 2" из обсуждения: раньше такой
+-- каскад либо пропадал молча, либо часть его участников получала неверный далёкий коннектор.
+drop table if exists :schema.err_isolated_water_clusters cascade;
+create table :schema.err_isolated_water_clusters as
+select cm.cluster_id, cm.cluster_size, cm.members cluster_members, st_multi(st_union(ua.geom)) geom
+from :schema.tmp_cluster_members cm
+join :schema.tmp_unconnected_areas ua on ua.way_osm_id = any(cm.members)
+where cm.cluster_size >= 2
+    and not exists (select 1 from :schema.tmp_pond_candidates pc where pc.cluster_id = cm.cluster_id)
+group by cm.cluster_id, cm.cluster_size, cm.members;
+
+alter table :schema.err_isolated_water_clusters
+    alter column geom type geometry(MultiPolygon,4326) using st_setsrid(geom,4326);
+
+create index on :schema.err_isolated_water_clusters using gist(geom);
+create index on :schema.err_isolated_water_clusters(cluster_id);
+
+-- Связки для "брошенных" КОНЦОВ водотоков (только устья — начала намеренно не трогаем, по
+-- запросу) — те же настоящие тупики (tmp_way_ends), для которых НЕ нашлось пруда (либо пруда
+-- рядом вообще нет, либо конкурирующий водоток оказался ближе — см.
+-- err_possible_isolated_water_areas выше), но нашёлся другой водоток поблизости.
+-- Обобщает err_possible_missing_segments2 (тот скоуплен только на тупики, касающиеся
+-- water=river-полигона, и на теги river/canal) на ЛЮБОЙ настоящий брошенный конец реки/ручья/
+-- канала/канавы/дрены по всей стране, с тем же честным geography-порогом и той же
+-- материализованной tmp_waterway_lines, что уже посчитана выше. err_possible_missing_segments2
+-- не трогаем — отдельный алгоритм, оставлен как есть.
+--
+-- Дополнительно исключаем тупики с bnk > 0 — они уже физически касаются контура площадного
+-- водоёма (err_unconnected_to_network их и так ловит, а если у того же водоёма найдётся ещё и
+-- исток/выход — err_possible_missing_segments уже предложит flowline через него). Без этого
+-- фильтра получали задвоение: один и тот же "брошенный у озера" водоток одновременно предлагался
+-- и как flowline-кандидат (через err_possible_missing_segments/err_unconnected_to_network), и как
+-- связка с посторонним, не относящимся к делу водотоком здесь — для него "уже всё отстроено".
+--
+-- advisory, как err_possible_missing_segments/2 — не входит в err_all (в отличие от
+-- err_possible_isolated_water_areas/err_isolated_water_clusters, для которых включение в err_all
+-- было отдельным явным решением).
+create index on :schema.tmp_pond_candidates(way_osm_id, direction);
+
+drop table if exists :schema.err_possible_waterway_gaps cascade;
+create table :schema.err_possible_waterway_gaps as
+select
+    te.way_osm_id,
+    wl.way_osm_id other_way_osm_id,
+    st_transform(st_makeline(te.geom_3857, st_closestpoint(wl.geom_3857, te.geom_3857)), 4326) geom,
+    st_distance(te.geom::geography, wl.geom_simple::geography) distance_m
+from :schema.tmp_way_ends te
+join lateral (
+    select wl.way_osm_id, wl.geom_3857, wl.geom_simple
+    from :schema.tmp_waterway_lines wl
+    where wl.way_osm_id <> te.way_osm_id
+        and wl.geom_3857 && st_expand(te.geom_3857, 3000)
+        and st_dwithin(wl.geom_simple::geography, te.geom::geography, 300) -- тот же порог, TODO как и везде
+    order by wl.geom_3857 <-> te.geom_3857
+    limit 1
+) wl on true
+where te.bnk = 0
+    and not exists (
+        select 1 from :schema.tmp_pond_candidates pc
+        where pc.way_osm_id = te.way_osm_id and pc.direction = 'inflow'
+    );
+
+alter table :schema.err_possible_waterway_gaps
+    alter column geom type geometry(LineString,4326) using st_setsrid(geom,4326);
+
+create index on :schema.err_possible_waterway_gaps using gist(geom);
+create index on :schema.err_possible_waterway_gaps(way_osm_id);
+
+drop table :schema.tmp_way_starts;
+drop table :schema.tmp_way_ends;
+drop table :schema.tmp_unconnected_areas;
+drop table :schema.tmp_pond_edges;
+drop table :schema.tmp_edges_sym;
+drop table :schema.tmp_cluster_labels;
+drop table :schema.tmp_final_clusters;
+drop table :schema.tmp_cluster_members;
+drop table :schema.tmp_pond_candidates;
+drop table :schema.tmp_waterway_lines;
 
 
 
@@ -804,7 +1227,12 @@ from (
         ('6-52',    '''waterway'' = ''waterfall'' на линии — по конвенции OSM это точка (node)'),
         ('6-53',    '''waterway'' = ''oxbow'' на линии — рекомендуется ''natural'' = ''water'' + ''water'' = ''oxbow'' на полигоне (см. также 6-23)'),
         ('6-54',    '''natural'' = ''water'' на линейном объекте — этот тег для площадных объектов, нужен контур'),
-        ('6-55',    '''natural'' = ''wetland'' на линейном объекте — этот тег для площадных объектов, нужен контур')
+        ('6-55',    '''natural'' = ''wetland'' на линейном объекте — этот тег для площадных объектов, нужен контур'),
+        -- Изолированные водоёмы / каскады прудов (см. err_possible_isolated_water_areas,
+        -- err_isolated_water_clusters):
+        ('7-1',     'Водоём (или каскад прудов) не связан с сетью водотоков — рядом найден кандидат на исходящую связку. Предлагаемое решение — waterway=flowline от водоёма к кандидату, см. https://wiki.openstreetmap.org/wiki/Tag:waterway=flowline (см. err_possible_isolated_water_areas)'),
+        ('7-2',     'Водоём (или каскад прудов) не связан с сетью водотоков — рядом найден кандидат на входящую связку. Предлагаемое решение — waterway=flowline от кандидата к водоёму, см. https://wiki.openstreetmap.org/wiki/Tag:waterway=flowline (см. err_possible_isolated_water_areas)'),
+        ('7-3',     'Каскад из 2-10 изолированных водоёмов — ни у одного участника нет ни одного кандидата на связку в пределах порога расстояния, предложить waterway=flowline не удалось (см. err_isolated_water_clusters)')
 ) errs(err_id, description);
 
 
@@ -826,8 +1254,21 @@ with errors as (
     union all
     select way_osm_id osm_id, '5' err_id from :schema.err_unconnected_to_network
     union all
-    select way_osm_id osm_id, err_id 
+    select way_osm_id osm_id, err_id
     from :schema.err_possible_tagging_mistakes, unnest(err_list) err_id
+    union all
+    -- err_possible_isolated_water_areas/err_isolated_water_clusters сами по себе остаются
+    -- advisory (см. их комментарий выше), но ВСЕ участники кластера (cluster_members, не только
+    -- anchor-пруд) и кандидат-водоток помечаются в err_all, чтобы подсвечивались в обычных слоях
+    -- (в дополнение к отдельным слоям со связкой/каскадом).
+    select m osm_id, case direction when 'outflow' then '7-1' else '7-2' end err_id
+    from :schema.err_possible_isolated_water_areas, unnest(cluster_members) m
+    union all
+    select way_osm_id osm_id, case direction when 'outflow' then '7-1' else '7-2' end err_id
+    from :schema.err_possible_isolated_water_areas
+    union all
+    select m osm_id, '7-3' err_id
+    from :schema.err_isolated_water_clusters, unnest(cluster_members) m
 )
 select 
     osm_id, 
