@@ -303,143 +303,149 @@ create index on :schema.err_possible_wrong_dir using gist(geom);
 
 
 
-drop table if exists :schema.err_possible_missing_segments;
-create table :schema.err_possible_missing_segments as
-with water_points as (
-    select 
-        ns.way_osm_id waterarea_osm_id, 
-        sa.pnt_osm_id, sa.str, sa.end, sa.bnk
-    from :schema.graph_nodes_stat     ns
-    join :schema.graph_nodes_stat_agg sa
-        on ns.pnt_osm_id = sa.pnt_osm_id
-            and sa.bnk > 0
-            and sa.cst = 0
-            and (   (sa.str > 0 and sa.end = 0)
-                or  (sa.end > 0 and sa.str = 0)
-            )
-    join :schema.osm_areas wa 
-        on wa.way_osm_id = ns.way_osm_id
-            and coalesce(wa.tags ->> 'water', '') <> 'river' --and wa.way_osm_id = 332455907
-    where ns.type = 'bnk' 
-),
-water_area as(
-    select distinct  
-        wp.waterarea_osm_id, 
---        st_pointonsurface(wa.geom) geom
-        (st_maximuminscribedcircle(st_simplify(wa.geom, st_maxdistance(wa.geom, wa.geom) / 100))).center geom
-    from water_points wp
-    left join :schema.osm_areas wa 
-        on wa.way_osm_id = wp.waterarea_osm_id
-),
-water_out as (
-    select 
-        wp.waterarea_osm_id, 
-        ww.way_osm_id, 
-        ww.tags, 
-        st_startpoint(ww.geom) geom
-    from water_points wp 
-    join :schema.osm_ways ww 
-        on ww.nodes[1] = wp.pnt_osm_id
-            and ww.tags ->> 'waterway' in ('river','stream','canal','drain','ditch')
-),
-water_in as (
-    select 
-        wp.waterarea_osm_id, 
-        ww.way_osm_id, 
-        ww.tags, 
-        st_endpoint(ww.geom) geom 
-    from water_points wp 
-    join :schema.osm_ways ww 
-        on ww.nodes[cardinality(nodes)] = wp.pnt_osm_id
-            and ww.tags ->> 'waterway' in ('river','stream','canal','drain','ditch')
-),
-con_lines as (
-    select 
-        wi.way_osm_id               in_osm_id,
-        wa.waterarea_osm_id         wa_osm_id,
-        wo.way_osm_id               out_osm_id,
-        st_makeline(array[wi.geom, wa.geom, wo.geom]) geog1, -- связка через центр
-        st_makeline(array[                                   -- связка через вход, ближайшую точку на отрезке центр-выход, выход
-            wi.geom, 
-            st_transform(st_closestpoint(st_transform(st_makeline(wa.geom, wo.geom), 3857), st_transform(wi.geom, 3857)), 4326), 
-            wo.geom
-        ]) geog2
-    from water_area     wa
-    join water_in  wi using(waterarea_osm_id)
-    join water_out wo using(waterarea_osm_id)
-    where wi.way_osm_id <> wo.way_osm_id                     -- точки входа и выхода не должны принадлежать одной и той же линии водного объекта
-) 
-select distinct on (in_osm_id)                               -- отбрасываем дубли на входных точках (один вход -> один отрезок)
-    in_osm_id, 
-    wa_osm_id, 
-    out_osm_id, 
-    case 
-        when st_length(geog1::geography) < st_length(geog2::geography) then geog1 
-        else geog2 
-    end geom        -- Сравниваем два длины двух вариантов связки и выбираем самую короткую
-from con_lines
-order by in_osm_id, least(st_length(geog1::geography), st_length(geog2::geography)); -- сортируем по минимальной длине связки
-
-alter table :schema.err_possible_missing_segments alter column geom type geometry(LineString,4326) using st_setsrid(geom,4326);
-
-create index on :schema.err_possible_missing_segments using gist(geom);
-
-
-
-
-
-
-drop table if exists :schema.err_possible_missing_segments2; 
-create table :schema.err_possible_missing_segments2 as 
-with unconnected as (
-    select ww.way_osm_id, ww.tags, ww.geom, sa.pnt_osm_id
-    from :schema.graph_nodes_stat_agg sa
-    join :schema.osm_ways ww
-        on ww.nodes[cardinality(nodes)] = sa.pnt_osm_id
-            and ww.tags ->> 'waterway' ~ 'river|stream|canal|drain|ditch'
-    where   sa.str = 0 
-        and sa.mid = 0
-        and sa.cst = 0
-        and sa.bnk > 0
-),
-water_banks as (
-    select pnt_osm_id
-    from unconnected uc
-    join :schema.graph_nodes_stat ns using(pnt_osm_id)
-    join :schema.osm_areas wa 
-        on wa.way_osm_id = ns.way_osm_id
-    where ns.type = 'bnk'
-        and wa.tags ->> 'water' = 'river'
-)
-select 
-    un.way_osm_id in_osm_id,
-    un.tags,
-    wn.way_osm_id out_osm_id,
---    un.geom, wn.geom,
-    st_makeline(st_endpoint(un.geom), st_transform(st_closestpoint(st_transform(wn.geom, 3857), st_transform(st_endpoint(un.geom), 3857)), 4326)) geom
-from unconnected un
-join water_banks wb using(pnt_osm_id)
-left join :schema.err_possible_missing_segments ms 
-    on ms.in_osm_id = un.way_osm_id
-join lateral (
-    select 
-        ww.way_osm_id,
-        ww.tags,
-        ww.geom
-    from :schema.osm_ways ww
-    where ww.way_osm_id <> un.way_osm_id
-        and ww.tags ->> 'waterway' in ('river','canal'/*,'stream','drain','ditch'*/)
-        and not st_intersects(un.geom, ww.geom)
-        and not ww.tags ? 'tunnel'
-    order by ww.geom <-> st_endpoint(un.geom)
-    limit 1
-) wn on true
-where ms.in_osm_id is null;
---    and un.tags ->> 'water' = 'river';
-
-alter table :schema.err_possible_missing_segments2 alter column geom type geometry(LineString,4326) using st_setsrid(geom,4326);
-
-create index on :schema.err_possible_missing_segments2 using gist(geom);
+-- err_possible_missing_segments / _2 (advisory-связки) — ОТКЛЮЧЕНЫ.
+-- Причина: оба блока очень тяжёлые (nearest-neighbour lateral по всем линиям,
+-- st_maximuminscribedcircle по каждому водоёму), а качество результата пока
+-- недостаточное для выкатывания — слои требуют доработки. В err_all они не входят
+-- и ни на что больше не ссылаются, поэтому отключаются без последствий для
+-- остальных проверок. Включать обратно вместе с доработкой алгоритма.
+-- drop table if exists :schema.err_possible_missing_segments;
+-- create table :schema.err_possible_missing_segments as
+-- with water_points as (
+--     select 
+--         ns.way_osm_id waterarea_osm_id, 
+--         sa.pnt_osm_id, sa.str, sa.end, sa.bnk
+--     from :schema.graph_nodes_stat     ns
+--     join :schema.graph_nodes_stat_agg sa
+--         on ns.pnt_osm_id = sa.pnt_osm_id
+--             and sa.bnk > 0
+--             and sa.cst = 0
+--             and (   (sa.str > 0 and sa.end = 0)
+--                 or  (sa.end > 0 and sa.str = 0)
+--             )
+--     join :schema.osm_areas wa 
+--         on wa.way_osm_id = ns.way_osm_id
+--             and coalesce(wa.tags ->> 'water', '') <> 'river' --and wa.way_osm_id = 332455907
+--     where ns.type = 'bnk' 
+-- ),
+-- water_area as(
+--     select distinct  
+--         wp.waterarea_osm_id, 
+-- --        st_pointonsurface(wa.geom) geom
+--         (st_maximuminscribedcircle(st_simplify(wa.geom, st_maxdistance(wa.geom, wa.geom) / 100))).center geom
+--     from water_points wp
+--     left join :schema.osm_areas wa 
+--         on wa.way_osm_id = wp.waterarea_osm_id
+-- ),
+-- water_out as (
+--     select 
+--         wp.waterarea_osm_id, 
+--         ww.way_osm_id, 
+--         ww.tags, 
+--         st_startpoint(ww.geom) geom
+--     from water_points wp 
+--     join :schema.osm_ways ww 
+--         on ww.nodes[1] = wp.pnt_osm_id
+--             and ww.tags ->> 'waterway' in ('river','stream','canal','drain','ditch')
+-- ),
+-- water_in as (
+--     select 
+--         wp.waterarea_osm_id, 
+--         ww.way_osm_id, 
+--         ww.tags, 
+--         st_endpoint(ww.geom) geom 
+--     from water_points wp 
+--     join :schema.osm_ways ww 
+--         on ww.nodes[cardinality(nodes)] = wp.pnt_osm_id
+--             and ww.tags ->> 'waterway' in ('river','stream','canal','drain','ditch')
+-- ),
+-- con_lines as (
+--     select 
+--         wi.way_osm_id               in_osm_id,
+--         wa.waterarea_osm_id         wa_osm_id,
+--         wo.way_osm_id               out_osm_id,
+--         st_makeline(array[wi.geom, wa.geom, wo.geom]) geog1, -- связка через центр
+--         st_makeline(array[                                   -- связка через вход, ближайшую точку на отрезке центр-выход, выход
+--             wi.geom, 
+--             st_transform(st_closestpoint(st_transform(st_makeline(wa.geom, wo.geom), 3857), st_transform(wi.geom, 3857)), 4326), 
+--             wo.geom
+--         ]) geog2
+--     from water_area     wa
+--     join water_in  wi using(waterarea_osm_id)
+--     join water_out wo using(waterarea_osm_id)
+--     where wi.way_osm_id <> wo.way_osm_id                     -- точки входа и выхода не должны принадлежать одной и той же линии водного объекта
+-- ) 
+-- select distinct on (in_osm_id)                               -- отбрасываем дубли на входных точках (один вход -> один отрезок)
+--     in_osm_id, 
+--     wa_osm_id, 
+--     out_osm_id, 
+--     case 
+--         when st_length(geog1::geography) < st_length(geog2::geography) then geog1 
+--         else geog2 
+--     end geom        -- Сравниваем два длины двух вариантов связки и выбираем самую короткую
+-- from con_lines
+-- order by in_osm_id, least(st_length(geog1::geography), st_length(geog2::geography)); -- сортируем по минимальной длине связки
+--
+-- alter table :schema.err_possible_missing_segments alter column geom type geometry(LineString,4326) using st_setsrid(geom,4326);
+--
+-- create index on :schema.err_possible_missing_segments using gist(geom);
+--
+--
+--
+--
+--
+--
+-- drop table if exists :schema.err_possible_missing_segments2; 
+-- create table :schema.err_possible_missing_segments2 as 
+-- with unconnected as (
+--     select ww.way_osm_id, ww.tags, ww.geom, sa.pnt_osm_id
+--     from :schema.graph_nodes_stat_agg sa
+--     join :schema.osm_ways ww
+--         on ww.nodes[cardinality(nodes)] = sa.pnt_osm_id
+--             and ww.tags ->> 'waterway' ~ 'river|stream|canal|drain|ditch'
+--     where   sa.str = 0 
+--         and sa.mid = 0
+--         and sa.cst = 0
+--         and sa.bnk > 0
+-- ),
+-- water_banks as (
+--     select pnt_osm_id
+--     from unconnected uc
+--     join :schema.graph_nodes_stat ns using(pnt_osm_id)
+--     join :schema.osm_areas wa 
+--         on wa.way_osm_id = ns.way_osm_id
+--     where ns.type = 'bnk'
+--         and wa.tags ->> 'water' = 'river'
+-- )
+-- select 
+--     un.way_osm_id in_osm_id,
+--     un.tags,
+--     wn.way_osm_id out_osm_id,
+-- --    un.geom, wn.geom,
+--     st_makeline(st_endpoint(un.geom), st_transform(st_closestpoint(st_transform(wn.geom, 3857), st_transform(st_endpoint(un.geom), 3857)), 4326)) geom
+-- from unconnected un
+-- join water_banks wb using(pnt_osm_id)
+-- left join :schema.err_possible_missing_segments ms 
+--     on ms.in_osm_id = un.way_osm_id
+-- join lateral (
+--     select 
+--         ww.way_osm_id,
+--         ww.tags,
+--         ww.geom
+--     from :schema.osm_ways ww
+--     where ww.way_osm_id <> un.way_osm_id
+--         and ww.tags ->> 'waterway' in ('river','canal'/*,'stream','drain','ditch'*/)
+--         and not st_intersects(un.geom, ww.geom)
+--         and not ww.tags ? 'tunnel'
+--     order by ww.geom <-> st_endpoint(un.geom)
+--     limit 1
+-- ) wn on true
+-- where ms.in_osm_id is null;
+-- --    and un.tags ->> 'water' = 'river';
+--
+-- alter table :schema.err_possible_missing_segments2 alter column geom type geometry(LineString,4326) using st_setsrid(geom,4326);
+--
+-- create index on :schema.err_possible_missing_segments2 using gist(geom);
 
 
 
